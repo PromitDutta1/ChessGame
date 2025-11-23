@@ -1,0 +1,4 @@
+body { font-family: Arial; text-align:center; margin:0; background:#222; color:#fff; }
+#board { margin: 20px auto; }
+#theme-selector { margin: 10px; }
+#status { margin-top: 10px; font-weight:bold; }
