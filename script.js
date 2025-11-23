@@ -15,6 +15,11 @@ var whiteTime = 600, blackTime = 600;
 var gameActive = false, timerStarted = false;
 var redoStack = [];
 
+// Analysis Vars
+var isAnalysis = false;
+var analysisHistory = [];
+var analysisIndex = -1;
+
 // Stockfish engine wrapper
 var engine = null;
 var engineReady = false;
@@ -54,6 +59,8 @@ function playGameOverSound(){ beep(200,0.6); }
    Init Board & UI
    ======================= */
 function initGame() {
+  if(isAnalysis) exitAnalysis();
+
   stopTimer();
   timerStarted = false;
   gameMode = $('#gameMode').val();
@@ -63,19 +70,37 @@ function initGame() {
   whiteTime = startSeconds; blackTime = startSeconds;
   gameActive = true;
   updateTimerDisplay();
-
-  if(gameMode === 'local'){ $('#aiSettings').hide(); $('#undoRedoControls').hide(); }
-  else if(gameMode === 'online'){ $('#aiSettings').hide(); $('#undoRedoControls').hide(); }
-  else{ $('#aiSettings').show(); $('#undoRedoControls').show(); }
+  $('#analyzeBtn').hide();
+  
+  // Visibility Logic for Modes
+  if(gameMode === 'local'){ 
+      $('#aiSettings').hide(); 
+      $('#undoRedoControls').hide(); 
+      $('#gameActions').css('display','flex');
+      $('#drawBtn').show(); // Draw allowed in local
+  }
+  else if(gameMode === 'online'){ 
+      $('#aiSettings').hide(); 
+      $('#undoRedoControls').hide(); 
+      $('#gameActions').css('display','flex');
+      $('#drawBtn').show(); // Draw allowed in online
+  }
+  else{ 
+      // AI Mode
+      $('#aiSettings').show(); 
+      $('#undoRedoControls').show(); 
+      $('#gameActions').css('display','flex');
+      $('#drawBtn').hide(); // Draw hidden vs AI
+  }
 
   game.reset();
   redoStack = [];
   isAiThinking = false;
+  isAnalysis = false;
 
   var config = {
     draggable: true,
     position: 'start',
-    // Default wikipedia pieces.
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', 
     onDragStart: onDragStart,
     onDrop: onDrop,
@@ -89,7 +114,6 @@ function initGame() {
 
   updateStatus();
   
-  // Load engine immediately
   if(gameMode === 'ai') ensureEngine();
 
   if(gameMode==='ai' && playerColor==='black'){ setTimeout(makeAiMove,250); }
@@ -115,10 +139,18 @@ function startTimer(){
 function stopTimer(){ if(timerInterval) clearInterval(timerInterval); timerInterval=null; }
 
 function endGameByTime(colorWhoLost){
-  gameActive=false; stopTimer();
-  $status.text('Game Over! '+colorWhoLost+' ran out of time.');
-  playGameOverSound();
-  alert(colorWhoLost+" ran out of time! Game Over.");
+  finishGame('Game Over! '+colorWhoLost+' ran out of time.');
+}
+
+// Unified End Game Handler
+function finishGame(reasonText) {
+    gameActive = false; 
+    stopTimer();
+    $status.text(reasonText);
+    playGameOverSound();
+    alert(reasonText);
+    $('#analyzeBtn').show();
+    $('#gameActions').hide(); // Hide resign/draw buttons when game over
 }
 
 function updateTimerDisplay(){
@@ -135,6 +167,7 @@ function updateTimerDisplay(){
    Drag/Drop
    ======================= */
 function onDragStart(source,piece,position,orientation){
+  if(isAnalysis) return false;
   if(game.game_over() || !gameActive || isAiThinking) return false;
   if(whiteTime<=0 || blackTime<=0) return false;
   if(gameMode==='ai'){
@@ -163,6 +196,7 @@ function onSnapEnd(){ board.position(game.fen()); }
 function removeGreySquares(){ $('#myBoard .square-55d63').css('background',''); }
 function greySquare(square){ var $sq=$('#myBoard .square-'+square); var bg='#a9a9a9'; if($sq.hasClass('black-3c85d')) bg='#696969'; $sq.css('background',bg);}
 function onMouseoverSquare(square,piece){ 
+  if(isAnalysis) return;
   if(game.game_over() || !gameActive || isAiThinking) return;
   if(gameMode==='ai'){ var turn = game.turn()==='w'?'white':'black'; if(turn!==playerColor) return;}
   var moves = game.moves({square:square,verbose:true});
@@ -173,7 +207,7 @@ function onMouseoverSquare(square,piece){
 function onMouseoutSquare(square,piece){ removeGreySquares(); }
 
 /* =======================
-   Undo / Redo
+   Undo / Redo / Reset / Resign / Draw
    ======================= */
 $('#undoBtn').on('click',function(){
   if(gameMode==='local' || !gameActive || isAiThinking) return;
@@ -195,44 +229,135 @@ $('#redoBtn').on('click',function(){
   updateStatus();
 });
 
+$('#resetBtn').on('click', function(){
+    if(!gameActive) { initGame(); return; }
+    if(confirm("Are you sure you want to reset the board? Game progress will be lost.")){
+        finishGame("Game Reset by User.");
+    }
+});
+
+// RESIGN LOGIC
+$('#resignBtn').on('click', function() {
+    if(!gameActive) return;
+    if(!confirm("Are you sure you want to resign?")) return;
+
+    var loser = (game.turn() === 'w') ? 'White' : 'Black';
+    // In AI mode, if Human (Player) clicks resign, they lose regardless of turn
+    if(gameMode === 'ai') loser = (playerColor === 'white') ? 'White' : 'Black';
+    
+    var winner = (loser === 'White') ? 'Black' : 'White';
+    
+    // Online Sync
+    if(gameMode === 'online' && currentRoomId) {
+        pushGameEndToRoom(currentRoomId, winner + " won by resignation");
+    }
+    
+    finishGame(winner + " wins! (" + loser + " resigned)");
+});
+
+// DRAW LOGIC
+$('#drawBtn').on('click', function() {
+    if(!gameActive) return;
+    
+    // Local Mode: Simple Confirmation
+    if(gameMode === 'local') {
+        var currentSide = (game.turn() === 'w') ? 'White' : 'Black';
+        var otherSide = (currentSide === 'White') ? 'Black' : 'White';
+        if(confirm(currentSide + " offers a draw.\n\n" + otherSide + ", do you accept?")) {
+            finishGame("Game Drawn (Agreed).");
+        }
+    } 
+    // Online Mode: Send Signal
+    else if(gameMode === 'online' && currentRoomId) {
+        // We push a "draw_offer" status to DB
+        pushDrawOffer(currentRoomId, (game.turn() === 'w' ? 'white' : 'black'));
+        alert("Draw offer sent to opponent.");
+    }
+});
+
 /* =======================
    Status
    ======================= */
 function updateStatus(){
   var status='';
   var moveColor = (game.turn()==='b')?'Black':'White';
-  if(game.in_checkmate()){ status='Game Over: '+moveColor+' is in checkmate.'; gameActive=false; stopTimer(); alert(status); playGameOverSound(); }
-  else if(game.in_draw()){ status='Game Over: Drawn position'; gameActive=false; stopTimer(); }
+  if(game.in_checkmate()){ finishGame('Game Over: '+moveColor+' is in checkmate.'); }
+  else if(game.in_draw()){ finishGame('Game Over: Drawn position'); }
+  else if(!gameActive) { /* Handled in finishGame */ }
   else{ status = (!timerStarted)?'Waiting for First Move...':moveColor+' to move'+(game.in_check()?' (CHECK!)':''); }
   $status.text(status);
 }
 
 /* =======================
-   Stockfish AI (HARD & FAST)
+   Analysis Mode Logic
+   ======================= */
+$('#analyzeBtn').on('click', function() { startAnalysis(); });
+
+function startAnalysis() {
+    isAnalysis = true; gameActive = false; stopTimer();
+    analysisHistory = game.history({ verbose: true });
+    analysisIndex = analysisHistory.length - 1;
+    $('#gameSettings').hide();
+    $('#analysisControls').show();
+    $status.text("Analysis Mode");
+    ensureEngine();
+    updateAnalysisBoard();
+}
+
+function exitAnalysis() {
+    isAnalysis = false;
+    $('#gameSettings').show();
+    $('#analysisControls').hide();
+    initGame();
+}
+
+$('#exitAnalysisBtn').on('click', exitAnalysis);
+$('#anStart').on('click', function(){ analysisIndex = -1; updateAnalysisBoard(); });
+$('#anPrev').on('click', function(){ if(analysisIndex >= -1) analysisIndex--; updateAnalysisBoard(); });
+$('#anNext').on('click', function(){ if(analysisIndex < analysisHistory.length - 1) analysisIndex++; updateAnalysisBoard(); });
+$('#anEnd').on('click', function(){ analysisIndex = analysisHistory.length - 1; updateAnalysisBoard(); });
+
+function updateAnalysisBoard() {
+    var tempGame = new Chess();
+    for(var i=0; i<=analysisIndex; i++) if(analysisHistory[i]) tempGame.move(analysisHistory[i]);
+    var currentFen = tempGame.fen();
+    board.position(currentFen);
+    $status.text("Move: " + (analysisIndex + 1) + " / " + analysisHistory.length);
+    removeGreySquares();
+    askEngineEval(currentFen);
+}
+
+function askEngineEval(fen) {
+    if(!engine || !engineReady) return;
+    $('#evalScore').text("..."); $('#bestMove').text("...");
+    engine.postMessage('stop');
+    engine.postMessage('position fen ' + fen);
+    engine.postMessage('go depth 15');
+}
+
+function highlightBestMove(from, to) {
+    removeGreySquares();
+    $('#myBoard .square-' + from).css('box-shadow', 'inset 0 0 3px 3px rgba(0, 255, 0, 0.7)');
+    $('#myBoard .square-' + to).css('box-shadow', 'inset 0 0 3px 3px rgba(0, 255, 0, 0.7)');
+}
+
+/* =======================
+   Stockfish AI
    ======================= */
 async function ensureEngine(){
   if(engine && engineReady) return;
-  
-  // Blob loading to bypass CORS
   try {
     const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
     if (!response.ok) throw new Error('Network response was not ok');
     const scriptContent = await response.text();
     const blob = new Blob([scriptContent], { type: 'application/javascript' });
-    const workerUrl = URL.createObjectURL(blob);
-    engine = new Worker(workerUrl);
-  } catch(e) {
-    // Fallback
-    engine = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
-  }
-
+    engine = new Worker(URL.createObjectURL(blob));
+  } catch(e) { engine = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js'); }
   if(!engine) return;
-
   engine.onmessage = function(event){
     var line = typeof event==='string'? event: (event.data||event);
     if(line === 'uciok'){ engineReady = true; }
-    
-    if(typeof line==='string' && line.indexOf('bestmove')===0){
+    if(!isAnalysis && typeof line==='string' && line.indexOf('bestmove')===0){
       var parts=line.split(' ');
       if(parts[1]){
         var best=parts[1].trim();
@@ -246,82 +371,67 @@ async function ensureEngine(){
         }
       }
     }
+    if(isAnalysis && typeof line==='string') {
+        if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {
+            var scoreMatch = line.match(/score cp (-?\d+)/);
+            var mateMatch = line.match(/score mate (-?\d+)/);
+            if(mateMatch) { $('#evalScore').text("Mate in " + mateMatch[1]); } 
+            else if(scoreMatch) { var score = parseInt(scoreMatch[1]) / 100; $('#evalScore').text((score > 0 ? "+" : "") + score.toFixed(2)); }
+        }
+        if(line.indexOf(' pv ') !== -1) {
+             var pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);
+             if(pvMatch && pvMatch[1]) { var bm = pvMatch[1]; $('#bestMove').text(bm); highlightBestMove(bm.substring(0,2), bm.substring(2,4)); }
+        }
+    }
   };
-  
-  engine.postMessage('uci'); 
-  engine.postMessage('isready');
+  engine.postMessage('uci'); engine.postMessage('isready');
 }
 
 function makeAiMove(){
+  if(isAnalysis) return;
   if(game.game_over() || !gameActive){ isAiThinking=false; return; }
-  
-  if(!engine || !engineReady){
-      ensureEngine();
-      setTimeout(makeAiMove, 500); 
-      return;
-  }
-
+  if(!engine || !engineReady){ ensureEngine(); setTimeout(makeAiMove, 500); return; }
   if(engine && engineReady){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen '+game.fen());
-
-    // === ALL LEVELS ARE HARD (Skill Level 20) ===
-    // We only vary speed/depth to distinguish them.
-    
-    engine.postMessage('setoption name Skill Level value 20'); // Max skill for EVERYONE
     engine.postMessage('setoption name Threads value 4');      
     engine.postMessage('setoption name Hash value 128');
     engine.postMessage('setoption name Ponder value true');
-
-    if(aiDepth === 6) {
-        // === GOD MODE ===
-        // The specific setting you requested
-        engine.postMessage('setoption name Contempt value 20'); // Aggressive
-        engine.postMessage('go depth 22'); // Depth 22 (Might take 2-5 seconds, but unbeatable)
-        
-    } else {
-        // === LEVELS 1-5 (FAST but HARD) ===
-        // We use movetime to keep it fast.
-        // Even Level 1 is Skill 20, so it won't make dumb blunders, just shallow calculation.
-        
-        engine.postMessage('setoption name Contempt value 0'); // Objective play
-
-        // Time in milliseconds
-        // Level 1: 0.4s | Level 2: 0.6s | Level 3: 0.8s | Level 4: 1.0s | Level 5: 1.2s
-        var mappingTime = {
-          1: 400,
-          2: 600,
-          3: 800,
-          4: 1000,
-          5: 1200
-        };
-        var t = mappingTime[aiDepth] || 1000;
-        engine.postMessage('go movetime ' + t);
+    if(aiDepth === 6) { engine.postMessage('setoption name Skill Level value 20'); engine.postMessage('setoption name Contempt value 20'); engine.postMessage('go depth 22'); } 
+    else if (aiDepth === 5) { engine.postMessage('setoption name Skill Level value 20'); engine.postMessage('setoption name Contempt value 20'); engine.postMessage('go movetime 1500'); } 
+    else {
+        var skillMap = {1:11, 2:14, 3:17, 4:20};
+        var timeMap = {1:400, 2:600, 3:800, 4:1000};
+        engine.postMessage('setoption name Skill Level value ' + (skillMap[aiDepth]||20));
+        engine.postMessage('setoption name Contempt value 0');
+        engine.postMessage('go movetime ' + (timeMap[aiDepth]||1000));
     }
   } else {
-    // Random move fallback
-    var moves = game.moves();
-    var move = moves[Math.floor(Math.random()*moves.length)];
-    game.move(move);
-    board.position(game.fen());
-    isAiThinking=false;
-    updateStatus();
-    playMoveSound();
+    var moves = game.moves(); game.move(moves[Math.floor(Math.random()*moves.length)]);
+    board.position(game.fen()); isAiThinking=false; updateStatus(); playMoveSound();
   }
-
   if(!timerStarted) startTimer();
 }
 
 /* =======================
-   Online Multiplayer (Firebase)
+   Online Multiplayer Sync
    ======================= */
 function pushMoveToRoom(roomId, fen, san){
   if(!window.firebase || !window.firebase.database) return;
   var db = window.firebase.database;
   var ref = window.firebase.databaseRef;
   var update = window.firebase.databaseUpdate;
-  var roomRef = ref(db, 'rooms/'+roomId);
-  update(roomRef, {fen:fen,lastSan:san,timestamp:Date.now()});
+  update(ref(db, 'rooms/'+roomId), {fen:fen,lastSan:san,timestamp:Date.now()});
+}
+
+function pushGameEndToRoom(roomId, text){
+    if(!window.firebase || !window.firebase.database) return;
+    window.firebase.databaseUpdate(window.firebase.databaseRef(window.firebase.database, 'rooms/'+roomId), {gameResult: text});
+}
+
+function pushDrawOffer(roomId, color){
+    if(!window.firebase || !window.firebase.database) return;
+    window.firebase.databaseUpdate(window.firebase.databaseRef(window.firebase.database, 'rooms/'+roomId), {drawOffer: color});
 }
 
 function subscribeToRoom(roomId){
@@ -329,13 +439,28 @@ function subscribeToRoom(roomId){
   var db = window.firebase.database;
   var ref = window.firebase.databaseRef;
   var onValue = window.firebase.databaseOnValue;
-  
   if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
-  var roomRef=ref(db, 'rooms/'+roomId);
   
-  var listener=onValue(roomRef, function(snapshot){
+  var listener=onValue(ref(db, 'rooms/'+roomId), function(snapshot){
     var val=snapshot.val(); if(!val) return;
+    // Sync Board
     if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
+    // Sync Result
+    if(val.gameResult && gameActive) { finishGame("Online: " + val.gameResult); }
+    // Sync Draw Offer
+    if(val.drawOffer) {
+        // If I am NOT the one who offered (e.g., offer is white, I am playing black)
+        // Note: Simple check logic here assuming generic roles
+        var myColor = $('#playerColor').val(); // Simplified assumption for this snippet
+        if(val.drawOffer !== 'accepted' && val.drawOffer !== 'rejected') {
+           if(confirm("Opponent offers a draw. Accept?")) {
+               pushGameEndToRoom(roomId, "Draw agreed");
+               window.firebase.databaseUpdate(ref(db, 'rooms/'+roomId), {drawOffer: 'accepted'});
+           } else {
+               window.firebase.databaseUpdate(ref(db, 'rooms/'+roomId), {drawOffer: 'rejected'});
+           }
+        }
+    }
   });
   onlineUnsub=function(){};
 }
@@ -343,11 +468,7 @@ function subscribeToRoom(roomId){
 $('#joinRoomBtn').on('click',async function(){
   var pref=$('#roomIdInput').val().trim();
   if(!window.firebase || !window.firebase.database){ alert('Firebase not configured.'); return; }
-  
-  var db = window.firebase.database;
-  var ref = window.firebase.databaseRef;
-  var set = window.firebase.databaseSet;
-
+  var db = window.firebase.database; var ref = window.firebase.databaseRef; var set = window.firebase.databaseSet;
   if(pref){
     currentRoomId=pref; isHost=false; subscribeToRoom(currentRoomId);
     alert('Joined room: '+currentRoomId);
@@ -356,7 +477,7 @@ $('#joinRoomBtn').on('click',async function(){
     currentRoomId=id; isHost=true;
     set(ref(db, 'rooms/'+currentRoomId), {fen:game.fen(),created:Date.now()});
     subscribeToRoom(currentRoomId);
-    alert('Created room: '+currentRoomId+'\nShare this ID to invite.');
+    alert('Created room: '+currentRoomId+'\nShare this ID.');
     $('#roomIdInput').val(currentRoomId);
   }
   $('#gameMode').val('online'); initGame();
@@ -366,7 +487,6 @@ $('#joinRoomBtn').on('click',async function(){
    Start / Reset
    ======================= */
 $('#startBtn').on('click',initGame);
-$('#resetBtn').on('click',initGame);
 $('#gameMode').on('change',initGame);
 
 $(document).ready(function(){
@@ -374,29 +494,14 @@ $(document).ready(function(){
   setupFirebaseModuleLoader();
 });
 
-/* =======================
-   Firebase Module Loader
-   ======================= */
 function setupFirebaseModuleLoader(){
   var moduleScript=document.createElement('script');
   moduleScript.type='module';
   moduleScript.text=`
     import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js';
     import { getDatabase, ref, onValue, set, update } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js';
-    const firebaseConfig = {
-      apiKey: "YOUR_API_KEY",
-      authDomain: "YOUR_AUTH_DOMAIN",
-      databaseURL: "YOUR_DATABASE_URL",
-      projectId: "YOUR_PROJECT_ID",
-      storageBucket: "YOUR_STORAGE_BUCKET",
-      messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
-      appId: "YOUR_APP_ID"
-    };
-    try {
-        const app = initializeApp(firebaseConfig);
-        const db = getDatabase(app);
-        window.firebase={app:app,database:db,databaseRef:ref,databaseOnValue:onValue,databaseSet:set,databaseUpdate:update};
-    } catch(e) { console.log("Firebase not configured"); }
+    const firebaseConfig = { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", databaseURL: "YOUR_DATABASE_URL", projectId: "YOUR_PROJECT_ID", storageBucket: "YOUR_STORAGE_BUCKET", messagingSenderId: "YOUR_MESSAGING_SENDER_ID", appId: "YOUR_APP_ID" };
+    try { const app = initializeApp(firebaseConfig); const db = getDatabase(app); window.firebase={app:app,database:db,databaseRef:ref,databaseOnValue:onValue,databaseSet:set,databaseUpdate:update}; } catch(e) { console.log("Firebase not configured"); }
   `;
   document.body.appendChild(moduleScript);
 }
