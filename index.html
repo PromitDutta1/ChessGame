@@ -9,6 +9,10 @@
 </head>
 <body>
 <h1>ProCheeser</h1>
+
+<!-- Death Mode Warning (Hidden by default) -->
+<div id="death-warning" style="display:none;">⚠️ You have chosen <b>MISSION IMPOSSIBLE</b>.<br>Stockfish will now play at MAXIMUM POWER.<br><small>There is no escape.</small></div>
+
 <div class="main-container">
   <div class="board-section">
     <div id="timer-black-container" class="timer-display"><span class="player-label">Black</span><span id="time-b">10:00</span></div>
@@ -45,7 +49,8 @@
           <option value="3">Level 3 (Master & Instant)</option>
           <option value="4">Level 4 (Elite & Instant)</option>
           <option value="5">Level 5 (Grandmaster Blitz)</option>
-          <option value="6" selected>Level 6 (GOD MODE - Unbeatable)</option>
+          <option value="6">Level 6 (GOD MODE - Unbeatable)</option>
+          <option value="7" style="color:red;font-weight:bold;">🚨 MISSION IMPOSSIBLE (IQ ∞)</option>
         </select>
         <label for="playerColor">Play As</label>
         <select id="playerColor">
@@ -101,11 +106,13 @@
 
   </div>
 </div>
+
+<!-- Death Mode Sound -->
+<audio id="deathModeSound" src="https://assets.mixkit.co/sfx/preview/mixkit-creepy-laugh-414.wav"></audio>
+
 <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
 <script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
-
-
