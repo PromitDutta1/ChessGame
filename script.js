@@ -24,18 +24,22 @@ var analysisIndex = -1;
 var engine = null;
 var engineReady = false;
 
-// Online multiplayer
+// Online multiplayer vars
 var firebaseApp = null;
 var database = null;
 var currentRoomId = null;
 var isHost = false;
 var onlineUnsub = null;
 
-// Audio
+// Audio Context
 var audioCtx = null;
 function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
+
+/* =======================
+   Sound Functions
+   ======================= */
 function beep(freq,dur,when=0){
   ensureAudio();
   var o=audioCtx.createOscillator();
@@ -55,6 +59,22 @@ function playCaptureSound(){ beep(600,0.06); beep(400,0.04,0.06); }
 function playCheckSound(){ beep(1200,0.12); }
 function playGameOverSound(){ beep(200,0.6); }
 
+function playDeathModeSound(){
+  ensureAudio();
+  // Create a deep, scary sawtooth wave
+  var o = audioCtx.createOscillator();
+  var g = audioCtx.createGain();
+  o.type = 'sawtooth';
+  o.frequency.setValueAtTime(100, audioCtx.currentTime);
+  o.frequency.exponentialRampToValueAtTime(30, audioCtx.currentTime + 2);
+  o.connect(g);
+  g.connect(audioCtx.destination);
+  g.gain.setValueAtTime(0.5, audioCtx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 2);
+  o.start();
+  o.stop(audioCtx.currentTime + 2);
+}
+
 /* =======================
    Init Board & UI
    ======================= */
@@ -72,25 +92,28 @@ function initGame() {
   updateTimerDisplay();
   $('#analyzeBtn').hide();
   
-  // Visibility Logic for Modes
+  // Check Death Mode on Init
+  checkDeathMode(aiDepth);
+
+  // Visibility Logic
   if(gameMode === 'local'){ 
       $('#aiSettings').hide(); 
       $('#undoRedoControls').hide(); 
       $('#gameActions').css('display','flex');
-      $('#drawBtn').show(); // Draw allowed in local
+      $('#drawBtn').show(); 
   }
   else if(gameMode === 'online'){ 
       $('#aiSettings').hide(); 
       $('#undoRedoControls').hide(); 
       $('#gameActions').css('display','flex');
-      $('#drawBtn').show(); // Draw allowed in online
+      $('#drawBtn').show(); 
   }
   else{ 
       // AI Mode
       $('#aiSettings').show(); 
       $('#undoRedoControls').show(); 
       $('#gameActions').css('display','flex');
-      $('#drawBtn').hide(); // Draw hidden vs AI
+      $('#drawBtn').hide(); 
   }
 
   game.reset();
@@ -120,6 +143,29 @@ function initGame() {
 
   if(gameMode==='online' && currentRoomId){ subscribeToRoom(currentRoomId); }
   else { if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; } }
+}
+
+/* =======================
+   Death Mode Logic
+   ======================= */
+// Listener for Difficulty Change
+document.getElementById("difficulty").addEventListener("change", function(){
+  aiDepth = Number(this.value);
+  checkDeathMode(aiDepth);
+});
+
+function checkDeathMode(level) {
+  let warning = document.getElementById("death-warning");
+  if(level === 7){
+    if(warning) warning.style.display = "block";
+    playDeathModeSound();
+    document.body.style.background = "black";
+    document.body.style.color = "red";
+  } else {
+    if(warning) warning.style.display = "none";
+    document.body.style.background = ""; // Reset
+    document.body.style.color = "";
+  }
 }
 
 /* =======================
@@ -220,57 +266,91 @@ $('#redoBtn').on('click',function(){
 
 $('#resetBtn').on('click', function(){
     if(!gameActive) { initGame(); return; }
-    if(confirm("Are you sure you want to reset the board? Game progress will be lost.")){
-        finishGame("Game Reset by User.");
+    if(confirm("Reset game?")){
+        initGame();
     }
 });
 
-// RESIGN LOGIC
 $('#resignBtn').on('click', function() {
     if(!gameActive) return;
-    if(!confirm("Are you sure you want to resign?")) return;
-
+    if(!confirm("Resign?")) return;
     var loser = (game.turn() === 'w') ? 'White' : 'Black';
     if(gameMode === 'ai') loser = (playerColor === 'white') ? 'White' : 'Black';
     var winner = (loser === 'White') ? 'Black' : 'White';
-    
-    if(gameMode === 'online' && currentRoomId) {
-        pushGameEndToRoom(currentRoomId, winner + " won by resignation");
-    }
-    
+    if(gameMode === 'online' && currentRoomId) { pushGameEndToRoom(currentRoomId, winner + " won by resignation"); }
     finishGame(winner + " wins! (" + loser + " resigned)");
 });
 
-// DRAW LOGIC
 $('#drawBtn').on('click', function() {
     if(!gameActive) return;
     if(gameMode === 'local') {
-        var currentSide = (game.turn() === 'w') ? 'White' : 'Black';
-        var otherSide = (currentSide === 'White') ? 'Black' : 'White';
-        if(confirm(currentSide + " offers a draw.\n\n" + otherSide + ", do you accept?")) {
-            finishGame("Game Drawn (Agreed).");
-        }
+        if(confirm("Offer draw?")) finishGame("Game Drawn (Agreed).");
     } else if(gameMode === 'online' && currentRoomId) {
         pushDrawOffer(currentRoomId, (game.turn() === 'w' ? 'white' : 'black'));
-        alert("Draw offer sent to opponent.");
+        alert("Draw offer sent.");
     }
 });
 
 /* =======================
-   Status
+   Updated Status & Animation Logic
    ======================= */
 function updateStatus(){
-  var status='';
-  var moveColor = (game.turn()==='b')?'Black':'White';
-  if(game.in_checkmate()){ finishGame('Game Over: '+moveColor+' is in checkmate.'); }
-  else if(game.in_draw()){ finishGame('Game Over: Drawn position'); }
-  else if(!gameActive) { /* Handled in finishGame */ }
-  else{ status = (!timerStarted)?'Waiting for First Move...':moveColor+' to move'+(game.in_check()?' (CHECK!)':''); }
+  var status = '';
+  var moveColor = (game.turn() === 'b') ? 'Black' : 'White';
+
+  if (game.in_checkmate()) {
+    let winner = (moveColor === 'White') ? 'Black' : 'White';
+    status = `CHECKMATE — ${winner} Wins!`;
+
+    gameActive = false;
+    stopTimer();
+    
+    // Trigger board animation BEFORE showing overlay
+    triggerBoardWinAnimation(winner);
+    
+    // Finish game (shows overlay)
+    finishGame(status); 
+    return; 
+  }
+
+  else if (game.in_draw()) {
+    status = 'Game Over — Draw';
+    gameActive = false;
+    stopTimer();
+    triggerBoardDrawAnimation();
+    finishGame(status);
+  }
+
+  else {
+    status = (!timerStarted) 
+      ? 'Waiting for First Move...' 
+      : `${moveColor} to move${game.in_check() ? ' (CHECK!)' : ''}`;
+  }
+
   $status.text(status);
 }
 
 /* =======================
-   Game Over Overlay (Current)
+   Board Animations
+   ======================= */
+function triggerBoardWinAnimation(winner) {
+  let boardElem = document.getElementById("myBoard");
+  boardElem.classList.add("winner-animation");
+  setTimeout(() => {
+    boardElem.classList.remove("winner-animation");
+  }, 4000);
+}
+
+function triggerBoardDrawAnimation() {
+  let boardElem = document.getElementById("myBoard");
+  boardElem.classList.add("draw-animation");
+  setTimeout(() => {
+    boardElem.classList.remove("draw-animation");
+  }, 3000);
+}
+
+/* =======================
+   Game Over Overlay
    ======================= */
 function finishGame(reasonText) {
     gameActive = false;
@@ -278,54 +358,34 @@ function finishGame(reasonText) {
     $status.text(reasonText);
     playGameOverSound();
 
-    // Get or create overlay
-    let overlay = document.getElementById('gameOverOverlay');
-    if (!overlay) {
-        overlay = document.createElement('div');
-        overlay.id = 'gameOverOverlay';
-        document.body.appendChild(overlay);
-    }
-
-    overlay.innerHTML = `
-        <div class="message">${reasonText}</div>
-        <span>🎉 Congrats!</span>
-        <button id="restartBtn">Restart Game</button>
-    `;
-
-    overlay.classList.remove('win','lose','draw');
-    if (reasonText.toLowerCase().includes('draw')) overlay.classList.add('draw');
-    else if (reasonText.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
-    else overlay.classList.add('win');
-
-    overlay.classList.add('show');
-
-    // 🔥 After 3 seconds, shrink overlay to top — no longer blocking the screen
-    setTimeout(() => {
-        overlay.classList.add('minimized');
-    }, 3000);
+    showEndGame(reasonText);
 
     $('#analyzeBtn').show();
     $('#gameActions').hide();
-
-    // Attach event listener for the new button
-    document.getElementById("restartBtn").addEventListener("click", restartGame);
-}
-
-// Make restartGame available globally for the inline onclick handler/listener
-window.restartGame = function(){
-    const overlay = document.getElementById('gameOverOverlay');
-    if(overlay) {
-        overlay.classList.remove('show');
-        overlay.classList.remove('minimized');
-    }
-    initGame();
 }
 
 function showEndGame(result) {
-    const overlay = document.getElementById("end-game-overlay");
-    const textElement = document.getElementById("end-game-text");
+    let overlay = document.getElementById("end-game-overlay");
+    
+    // Create if missing (using specific ID you requested)
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'end-game-overlay';
+        overlay.className = 'hidden'; 
+        // Apply styling inline or ensure CSS handles #end-game-overlay similar to #gameOverOverlay
+        // For safety, I'll add the basic structure content here
+        overlay.innerHTML = `<div id="end-game-text" class="message"></div><span>🎉 Congrats!</span>`;
+        document.body.appendChild(overlay);
+    }
 
-    textElement.textContent = result;
+    const textElement = document.getElementById("end-game-text");
+    if(textElement) textElement.textContent = result;
+
+    // Apply classes
+    overlay.classList.remove('win','lose','draw');
+    if (result.toLowerCase().includes('draw')) overlay.classList.add('draw');
+    else if (result.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
+    else overlay.classList.add('win');
 
     // Make overlay visible but non-blocking after animation
     overlay.style.display = "flex";
@@ -350,6 +410,7 @@ function showEndGame(result) {
         closeBtn.addEventListener("click", () => {
             overlay.classList.add("hidden");
             overlay.style.pointerEvents = "none"; 
+            initGame(); // Or just close overlay
         });
     }
 }
@@ -360,9 +421,9 @@ function showEndGame(result) {
 $('#analyzeBtn').on('click', function() { startAnalysis(); });
 
 function startAnalysis() {
-    // Hide overlay if analysis is clicked
-    const overlay = document.getElementById('gameOverOverlay');
-    if(overlay) overlay.classList.remove('show');
+    // Hide overlay
+    const overlay = document.getElementById("end-game-overlay");
+    if(overlay) { overlay.classList.add("hidden"); overlay.style.pointerEvents = "none"; }
 
     isAnalysis = true; gameActive = false; stopTimer();
     analysisHistory = game.history({ verbose: true });
@@ -390,11 +451,10 @@ $('#anEnd').on('click', function(){ analysisIndex = analysisHistory.length - 1; 
 function updateAnalysisBoard() {
     var tempGame = new Chess();
     for(var i=0; i<=analysisIndex; i++) if(analysisHistory[i]) tempGame.move(analysisHistory[i]);
-    var currentFen = tempGame.fen();
-    board.position(currentFen);
+    board.position(tempGame.fen());
     $status.text("Move: " + (analysisIndex + 1) + " / " + analysisHistory.length);
     removeGreySquares();
-    askEngineEval(currentFen);
+    askEngineEval(tempGame.fen());
 }
 
 function askEngineEval(fen) {
@@ -405,42 +465,48 @@ function askEngineEval(fen) {
     engine.postMessage('go depth 15');
 }
 
-function highlightBestMove(from, to) {
-    removeGreySquares();
-    $('#myBoard .square-' + from).css('box-shadow', 'inset 0 0 3px 3px rgba(0, 255, 0, 0.7)');
-    $('#myBoard .square-' + to).css('box-shadow', 'inset 0 0 3px 3px rgba(0, 255, 0, 0.7)');
-}
-
 /* =======================
-   Stockfish AI
+   Stockfish AI & Engine Handling
    ======================= */
 async function ensureEngine(){
   if(engine && engineReady) return;
+  engineReady = false;
+  
   try {
-    const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
-    if (!response.ok) throw new Error('Network response was not ok');
-    const scriptContent = await response.text();
-    const blob = new Blob([scriptContent], { type: 'application/javascript' });
-    engine = new Worker(URL.createObjectURL(blob));
-  } catch(e) { engine = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js'); }
-  if(!engine) return;
+    // Try loading from CDN (as requested in snippet)
+    if(typeof STOCKFISH === 'function') engine = STOCKFISH();
+    else {
+        // Fallback to blob or direct URL
+        const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+        if (!response.ok) throw new Error('Network response was not ok');
+        const scriptContent = await response.text();
+        const blob = new Blob([scriptContent], { type: 'application/javascript' });
+        engine = new Worker(URL.createObjectURL(blob));
+    }
+  } catch(e) {
+    engine = null; return;
+  }
+
   engine.onmessage = function(event){
     var line = typeof event==='string'? event: (event.data||event);
+    
     if(line === 'uciok'){ engineReady = true; }
-    if(!isAnalysis && typeof line==='string' && line.indexOf('bestmove')===0){
-      var parts=line.split(' ');
-      if(parts[1]){
-        var best=parts[1].trim();
-        if(best && best!=='(none)'){
-          game.move({from:best.substring(0,2),to:best.substring(2,4),promotion: best.length>4?best[4]:'q'});
+
+    // Play Move Logic
+    if(!isAnalysis && line.startsWith("bestmove")){
+      let parts = line.split(' ');
+      let moveStr = parts[1];
+      if(moveStr && moveStr !== '(none)'){
+          game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });
           board.position(game.fen());
-          isAiThinking=false;
+          isAiThinking = false;
           updateStatus();
           updateTimerDisplay();
           playMoveSound();
-        }
       }
     }
+
+    // Analysis Logic
     if(isAnalysis && typeof line==='string') {
         if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {
             var scoreMatch = line.match(/score cp (-?\d+)/);
@@ -450,41 +516,58 @@ async function ensureEngine(){
         }
         if(line.indexOf(' pv ') !== -1) {
              var pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);
-             if(pvMatch && pvMatch[1]) { var bm = pvMatch[1]; $('#bestMove').text(bm); highlightBestMove(bm.substring(0,2), bm.substring(2,4)); }
+             if(pvMatch && pvMatch[1]) { 
+                 var bm = pvMatch[1]; 
+                 $('#bestMove').text(bm); 
+                 // Highlight logic...
+             }
         }
     }
   };
-  engine.postMessage('uci'); engine.postMessage('isready');
+  
+  engine.postMessage("uci");
 }
 
+// UPDATED makeAiMove with Level 7 Logic
 function makeAiMove(){
-  if(isAnalysis) return;
-  if(game.game_over() || !gameActive){ isAiThinking=false; return; }
-  if(!engine || !engineReady){ ensureEngine(); setTimeout(makeAiMove, 500); return; }
-  if(engine && engineReady){
-    engine.postMessage('ucinewgame');
-    engine.postMessage('position fen '+game.fen());
-    engine.postMessage('setoption name Threads value 4');      
-    engine.postMessage('setoption name Hash value 128');
-    engine.postMessage('setoption name Ponder value true');
-    if(aiDepth === 6) { engine.postMessage('setoption name Skill Level value 20'); engine.postMessage('setoption name Contempt value 20'); engine.postMessage('go depth 22'); } 
-    else if (aiDepth === 5) { engine.postMessage('setoption name Skill Level value 20'); engine.postMessage('setoption name Contempt value 20'); engine.postMessage('go movetime 1500'); } 
-    else {
-        var skillMap = {1:11, 2:14, 3:17, 4:20};
-        var timeMap = {1:400, 2:600, 3:800, 4:1000};
-        engine.postMessage('setoption name Skill Level value ' + (skillMap[aiDepth]||20));
-        engine.postMessage('setoption name Contempt value 0');
-        engine.postMessage('go movetime ' + (timeMap[aiDepth]||1000));
-    }
+  if(game.game_over() || !gameActive) return;
+
+  ensureEngine();
+  isAiThinking = true;
+
+  // Mapping for Levels 1-7
+  let mapping = {
+    1: 8, 2: 12, 3: 16, 
+    4: 20, 5: 24, 6: 28,
+    7: 40  // 💀 MISSION IMPOSSIBLE
+  };
+
+  let depth = mapping[aiDepth] || 16;
+
+  if(engine && engineReady) {
+      engine.postMessage("ucinewgame");
+      engine.postMessage("position fen " + game.fen());
+      
+      // Specific settings for Level 7
+      if(aiDepth === 7) {
+          engine.postMessage('setoption name Skill Level value 20');
+          engine.postMessage('setoption name Contempt value 20');
+          engine.postMessage("go depth " + depth);
+      } else {
+          engine.postMessage("go depth " + depth);
+      }
   } else {
-    var moves = game.moves(); game.move(moves[Math.floor(Math.random()*moves.length)]);
-    board.position(game.fen()); isAiThinking=false; updateStatus(); playMoveSound();
+      // Fallback if engine fails
+      var moves = game.moves();
+      game.move(moves[Math.floor(Math.random()*moves.length)]);
+      board.position(game.fen());
+      isAiThinking = false;
+      updateStatus();
   }
-  if(!timerStarted) startTimer();
 }
 
 /* =======================
-   Online Multiplayer Sync
+   Online Sync (Preserved)
    ======================= */
 function pushMoveToRoom(roomId, fen, san){
   if(!window.firebase || !window.firebase.database) return;
@@ -513,15 +596,10 @@ function subscribeToRoom(roomId){
   
   var listener=onValue(ref(db, 'rooms/'+roomId), function(snapshot){
     var val=snapshot.val(); if(!val) return;
-    // Sync Board
     if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
-    // Sync Result
     if(val.gameResult && gameActive) { finishGame("Online: " + val.gameResult); }
-    // Sync Draw Offer
     if(val.drawOffer) {
-        // If I am NOT the one who offered (e.g., offer is white, I am playing black)
-        // Note: Simple check logic here assuming generic roles
-        var myColor = $('#playerColor').val(); // Simplified assumption for this snippet
+        var myColor = $('#playerColor').val(); 
         if(val.drawOffer !== 'accepted' && val.drawOffer !== 'rejected') {
            if(confirm("Opponent offers a draw. Accept?")) {
                pushGameEndToRoom(roomId, "Draw agreed");
@@ -552,6 +630,7 @@ $('#joinRoomBtn').on('click',async function(){
   }
   $('#gameMode').val('online'); initGame();
 });
+
 /* =======================
    Start / Reset
    ======================= */
