@@ -73,15 +73,15 @@ function initGame() {
   isAiThinking = false;
 
   var config = {
-    draggable:true,
-    position:'start',
-    pieceTheme:'/assets/pieces/wood/{piece}.png',
-    onDragStart:onDragStart,
-    onDrop:onDrop,
-    onMouseoutSquare:onMouseoutSquare,
-    onMouseoverSquare:onMouseoverSquare,
-    onSnapEnd:onSnapEnd
-  };
+  draggable: true,
+  position: 'start',
+  pieceTheme: 'assets/pieces/wood/{piece}.png', // <-- UPDATE THIS PATH
+  onDragStart: onDragStart,
+  onDrop: onDrop,
+  onMouseoutSquare: onMouseoutSquare,
+  onMouseoverSquare: onMouseoverSquare,
+  onSnapEnd: onSnapEnd
+};
 
   board = Chessboard('myBoard', config);
   board.orientation(playerColor);
