@@ -242,8 +242,9 @@ function makeAiMove(){
   if(engine && engineReady){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen '+game.fen());
-    var mapping={1:8,2:12,3:16};
-    var depth=mapping[aiDepth]||12;
+    // NEW: AI hardness mapping for 6 levels
+    var mapping = {1:8, 2:12, 3:16, 4:20, 5:24, 6:28};
+    var depth = mapping[aiDepth] || 16;
     engine.postMessage('go depth '+depth);
   }else{
     var moves=game.moves();
