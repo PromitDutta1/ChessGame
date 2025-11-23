@@ -142,17 +142,6 @@ function endGameByTime(colorWhoLost){
   finishGame('Game Over! '+colorWhoLost+' ran out of time.');
 }
 
-// Unified End Game Handler
-function finishGame(reasonText) {
-    gameActive = false; 
-    stopTimer();
-    $status.text(reasonText);
-    playGameOverSound();
-    alert(reasonText);
-    $('#analyzeBtn').show();
-    $('#gameActions').hide(); // Hide resign/draw buttons when game over
-}
-
 function updateTimerDisplay(){
   function formatTime(t){ if(t>90000) return "∞"; var min=Math.floor(t/60); var sec=t%60; return (min<10?"0"+min:min)+":"+(sec<10?"0"+sec:sec); }
   $('#time-w').text(formatTime(whiteTime));
@@ -242,12 +231,9 @@ $('#resignBtn').on('click', function() {
     if(!confirm("Are you sure you want to resign?")) return;
 
     var loser = (game.turn() === 'w') ? 'White' : 'Black';
-    // In AI mode, if Human (Player) clicks resign, they lose regardless of turn
     if(gameMode === 'ai') loser = (playerColor === 'white') ? 'White' : 'Black';
-    
     var winner = (loser === 'White') ? 'Black' : 'White';
     
-    // Online Sync
     if(gameMode === 'online' && currentRoomId) {
         pushGameEndToRoom(currentRoomId, winner + " won by resignation");
     }
@@ -258,18 +244,13 @@ $('#resignBtn').on('click', function() {
 // DRAW LOGIC
 $('#drawBtn').on('click', function() {
     if(!gameActive) return;
-    
-    // Local Mode: Simple Confirmation
     if(gameMode === 'local') {
         var currentSide = (game.turn() === 'w') ? 'White' : 'Black';
         var otherSide = (currentSide === 'White') ? 'Black' : 'White';
         if(confirm(currentSide + " offers a draw.\n\n" + otherSide + ", do you accept?")) {
             finishGame("Game Drawn (Agreed).");
         }
-    } 
-    // Online Mode: Send Signal
-    else if(gameMode === 'online' && currentRoomId) {
-        // We push a "draw_offer" status to DB
+    } else if(gameMode === 'online' && currentRoomId) {
         pushDrawOffer(currentRoomId, (game.turn() === 'w' ? 'white' : 'black'));
         alert("Draw offer sent to opponent.");
     }
@@ -289,11 +270,52 @@ function updateStatus(){
 }
 
 /* =======================
+   Game Over Overlay
+   ======================= */
+function finishGame(reasonText) {
+    gameActive = false; 
+    stopTimer();
+    $status.text(reasonText);
+    playGameOverSound();
+
+    // Overlay
+    let overlay = document.getElementById('gameOverOverlay');
+    if(!overlay){
+        overlay = document.createElement('div');
+        overlay.id = 'gameOverOverlay';
+        document.body.appendChild(overlay);
+    }
+
+    overlay.innerHTML = `<div class="message">${reasonText}</div><span>🎉 Congrats!</span><button onclick="restartGame()">Restart Game</button>`;
+
+    overlay.classList.remove('win','lose','draw');
+    if(reasonText.toLowerCase().includes('draw')) overlay.classList.add('draw');
+    else if(reasonText.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
+    else overlay.classList.add('win');
+
+    overlay.classList.add('show');
+
+    $('#analyzeBtn').show();
+    $('#gameActions').hide();
+}
+
+// Make restartGame available globally for the inline onclick handler
+window.restartGame = function(){
+    const overlay = document.getElementById('gameOverOverlay');
+    if(overlay) overlay.classList.remove('show');
+    initGame();
+}
+
+/* =======================
    Analysis Mode Logic
    ======================= */
 $('#analyzeBtn').on('click', function() { startAnalysis(); });
 
 function startAnalysis() {
+    // Hide overlay if analysis is clicked (though usually overlay blocks interactions, this handles edge cases)
+    const overlay = document.getElementById('gameOverOverlay');
+    if(overlay) overlay.classList.remove('show');
+
     isAnalysis = true; gameActive = false; stopTimer();
     analysisHistory = game.history({ verbose: true });
     analysisIndex = analysisHistory.length - 1;
@@ -482,7 +504,6 @@ $('#joinRoomBtn').on('click',async function(){
   }
   $('#gameMode').val('online'); initGame();
 });
-
 /* =======================
    Start / Reset
    ======================= */
