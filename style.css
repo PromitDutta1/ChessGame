@@ -232,3 +232,9 @@ button.secondary-btn:hover{ background:#666 }
   pointer-events: none;
   justify-content: center;
 }
+
+#end-game-overlay.hidden {
+    opacity: 0;
+    transition: 0.7s ease-in-out;
+    pointer-events: none;
+}
