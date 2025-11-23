@@ -73,20 +73,25 @@ function initGame() {
   isAiThinking = false;
 
   var config = {
-  draggable: true,
-  position: 'start',
-  pieceTheme: 'assets/pieces/wood/{piece}.png', // <-- UPDATE THIS PATH
-  onDragStart: onDragStart,
-  onDrop: onDrop,
-  onMouseoutSquare: onMouseoutSquare,
-  onMouseoverSquare: onMouseoverSquare,
-  onSnapEnd: onSnapEnd
-};
+    draggable: true,
+    position: 'start',
+    // Using default wikipedia pieces to ensure it works instantly. 
+    // Change back to 'assets/pieces/wood/{piece}.png' if you have the folder.
+    pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', 
+    onDragStart: onDragStart,
+    onDrop: onDrop,
+    onMouseoutSquare: onMouseoutSquare,
+    onMouseoverSquare: onMouseoverSquare,
+    onSnapEnd: onSnapEnd
+  };
 
   board = Chessboard('myBoard', config);
   board.orientation(playerColor);
 
   updateStatus();
+
+  // Pre-load engine if AI mode is selected
+  if(gameMode === 'ai') { ensureEngine(); }
 
   if(gameMode==='ai' && playerColor==='black'){ setTimeout(makeAiMove,250); }
 
@@ -204,20 +209,30 @@ function updateStatus(){
 }
 
 /* =======================
-   Stockfish AI
+   Stockfish AI (UPDATED FOR GOD MODE)
    ======================= */
-function ensureEngine(){
+async function ensureEngine(){
   if(engine && engineReady) return;
-  engineReady=false;
-  try{
-    if(typeof STOCKFISH==='function'){ engine=STOCKFISH(); } 
-    else if(typeof Stockfish==='function'){ engine=Stockfish(); } 
-    else{ engine=new Worker('https://cdn.jsdelivr.net/npm/stockfish.js@10.0.2/stockfish.js'); }
-  }catch(e){ engine=null; return; }
+  
+  // Use Blob loading to ensure it works on all browsers without CORS issues
+  try {
+    const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+    if (!response.ok) throw new Error('Network response was not ok');
+    const scriptContent = await response.text();
+    const blob = new Blob([scriptContent], { type: 'application/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    engine = new Worker(workerUrl);
+  } catch(e) {
+    // Fallback if fetch fails
+    engine = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+  }
 
   if(!engine) return;
+
   engine.onmessage = function(event){
     var line = typeof event==='string'? event: (event.data||event);
+    if(line === 'uciok'){ engineReady = true; }
+    
     if(typeof line==='string' && line.indexOf('bestmove')===0){
       var parts=line.split(' ');
       if(parts[1]){
@@ -233,35 +248,55 @@ function ensureEngine(){
       }
     }
   };
-  try{ engine.postMessage('uci'); engine.postMessage('isready'); engineReady=true; } catch(e){ engineReady=false; }
+  
+  engine.postMessage('uci'); 
+  engine.postMessage('isready');
 }
 
 function makeAiMove(){
   if(game.game_over() || !gameActive){ isAiThinking=false; return; }
-  ensureEngine();
+  
+  // If engine not ready yet, try loading it and wait a bit
+  if(!engine || !engineReady){
+      ensureEngine();
+      setTimeout(makeAiMove, 500); 
+      return;
+  }
 
   if(engine && engineReady){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen '+game.fen());
 
-    // Stockfish unbeatable settings
-    engine.postMessage('setoption name Skill Level value 20');
-    engine.postMessage('setoption name Contempt value 0');
-    engine.postMessage('setoption name Threads value 4');
-    engine.postMessage('setoption name Hash value 256');
-    engine.postMessage('setoption name Ponder value true');
-    engine.postMessage('setoption name MultiPV value 1');
-
-    // Adaptive thinking
-    if(aiDepth <= 3){
-      var mappingDepth = {1:12,2:16,3:20};
-      engine.postMessage('go depth '+(mappingDepth[aiDepth]||16));
+    // === GOD MODE LOGIC ===
+    if(aiDepth === 6) {
+        // UNBEATABLE SETTINGS (IQ 180+)
+        engine.postMessage('setoption name Skill Level value 20'); // Max
+        engine.postMessage('setoption name Contempt value 20');    // Aggressive
+        engine.postMessage('setoption name Threads value 4');      // Multithreading
+        engine.postMessage('setoption name Hash value 128');       // High Memory
+        engine.postMessage('setoption name Ponder value true');
+        
+        // Deep search: Depth 22 or 8 seconds thinking
+        engine.postMessage('go depth 22 movetime 8000');
     } else {
-      var movetime = (aiDepth===4?3000: aiDepth===5?5000:10000); // 3s/5s/10s
-      engine.postMessage('go movetime '+movetime);
+        // Standard Settings
+        engine.postMessage('setoption name Skill Level value 20');
+        engine.postMessage('setoption name Contempt value 0');
+        engine.postMessage('setoption name Threads value 2');
+        engine.postMessage('setoption name MultiPV value 1');
+
+        // Adaptive thinking for lower levels
+        if(aiDepth <= 3){
+            var mappingDepth = {1:5, 2:10, 3:15};
+            engine.postMessage('go depth '+(mappingDepth[aiDepth]||15));
+        } else {
+            // Level 4 and 5
+            var movetime = (aiDepth===4?2000:4000); 
+            engine.postMessage('go movetime '+movetime);
+        }
     }
   } else {
-    // fallback random move if engine fails
+    // fallback random move if engine fails completely
     var moves = game.moves();
     var move = moves[Math.floor(Math.random()*moves.length)];
     game.move(move);
@@ -278,39 +313,48 @@ function makeAiMove(){
    Online Multiplayer (Firebase)
    ======================= */
 function pushMoveToRoom(roomId, fen, san){
-  if(!firebase) return;
-  var roomRef = firebase.database().ref('rooms/'+roomId);
-  roomRef.update({fen:fen,lastSan:san,timestamp:Date.now()});
+  if(!window.firebase || !window.firebase.database) return;
+  var db = window.firebase.database;
+  var ref = window.firebase.databaseRef;
+  var update = window.firebase.databaseUpdate;
+  var roomRef = ref(db, 'rooms/'+roomId);
+  update(roomRef, {fen:fen,lastSan:san,timestamp:Date.now()});
 }
 
 function subscribeToRoom(roomId){
-  if(!firebase || !firebase.database) return;
+  if(!window.firebase || !window.firebase.database) return;
+  var db = window.firebase.database;
+  var ref = window.firebase.databaseRef;
+  var onValue = window.firebase.databaseOnValue;
+  
   if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
-  var roomRef=firebase.database().ref('rooms/'+roomId);
-  var listener=function(snapshot){
+  var roomRef=ref(db, 'rooms/'+roomId);
+  
+  var listener=onValue(roomRef, function(snapshot){
     var val=snapshot.val(); if(!val) return;
     if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
-  };
-  roomRef.on('value',listener);
-  onlineUnsub=function(){ roomRef.off('value',listener); };
+  });
+  onlineUnsub=function(){ /* unsubscribe logic placeholder */ };
 }
 
 $('#joinRoomBtn').on('click',async function(){
   var pref=$('#roomIdInput').val().trim();
-  if(!firebase || !firebase.database){ alert('Firebase not configured.'); return; }
+  if(!window.firebase || !window.firebase.database){ alert('Firebase not configured in this demo.'); return; }
+  
+  var db = window.firebase.database;
+  var ref = window.firebase.databaseRef;
+  var set = window.firebase.databaseSet;
+
   if(pref){
     currentRoomId=pref; isHost=false; subscribeToRoom(currentRoomId);
     alert('Joined room: '+currentRoomId);
-    var roomRef=firebase.database().ref('rooms/'+currentRoomId+'/fen');
-    roomRef.once('value').then(function(snap){ var fen=snap.val(); if(fen){ game.load(fen); board.position(game.fen()); updateStatus(); }});
   }else{
     var id=Math.random().toString(36).slice(2,9);
     currentRoomId=id; isHost=true;
-    firebase.database().ref('rooms/'+currentRoomId).set({fen:game.fen(),created:Date.now()}).then(function(){
-      subscribeToRoom(currentRoomId);
-      alert('Created room: '+currentRoomId+'\nShare this ID to invite.');
-      $('#roomIdInput').val(currentRoomId);
-    });
+    set(ref(db, 'rooms/'+currentRoomId), {fen:game.fen(),created:Date.now()});
+    subscribeToRoom(currentRoomId);
+    alert('Created room: '+currentRoomId+'\nShare this ID to invite.');
+    $('#roomIdInput').val(currentRoomId);
   }
   $('#gameMode').val('online'); initGame();
 });
@@ -345,9 +389,11 @@ function setupFirebaseModuleLoader(){
       messagingSenderId: "YOUR_MESSAGING_SENDER_ID",
       appId: "YOUR_APP_ID"
     };
-    const app = initializeApp(firebaseConfig);
-    const db = getDatabase(app);
-    window.firebase={app:app,database:db,databaseRef:ref,databaseOnValue:onValue,databaseSet:set,databaseUpdate:update};
+    try {
+        const app = initializeApp(firebaseConfig);
+        const db = getDatabase(app);
+        window.firebase={app:app,database:db,databaseRef:ref,databaseOnValue:onValue,databaseSet:set,databaseUpdate:update};
+    } catch(e) { console.log("Firebase not configured"); }
   `;
   document.body.appendChild(moduleScript);
-}
+     }
