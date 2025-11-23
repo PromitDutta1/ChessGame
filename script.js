@@ -242,10 +242,17 @@ function makeAiMove(){
   if(engine && engineReady){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen '+game.fen());
-    // NEW: AI hardness mapping for 6 levels
-    var mapping = {1:8, 2:12, 3:16, 4:20, 5:24, 6:28};
-    var depth = mapping[aiDepth] || 16;
-    engine.postMessage('go depth '+depth);
+
+    // Hardness levels mapping
+    var mapping = {1:12, 2:16, 3:20, 4:24, 5:30, 6:40};
+    var depth = mapping[aiDepth] || 20;
+
+    if(aiDepth >= 5){
+      // For Expert / Grandmaster, use movetime instead of depth
+      engine.postMessage('go movetime 3000'); // 3 seconds per move
+    }else{
+      engine.postMessage('go depth '+depth);
+    }
   }else{
     var moves=game.moves();
     var move=moves[Math.floor(Math.random()*moves.length)];
