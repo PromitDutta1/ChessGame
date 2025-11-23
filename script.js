@@ -377,7 +377,6 @@ function finishGame(reasonText) {
 function showEndGame(result) {
     let overlay = document.getElementById("end-game-overlay");
     
-    // Create if missing (using specific ID you requested)
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'end-game-overlay';
@@ -389,20 +388,17 @@ function showEndGame(result) {
     const textElement = document.getElementById("end-game-text");
     if(textElement) textElement.textContent = result;
 
-    // Apply classes
     overlay.classList.remove('win','lose','draw');
     if (result.toLowerCase().includes('draw')) overlay.classList.add('draw');
     else if (result.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
     else overlay.classList.add('win');
 
-    // Make overlay visible but non-blocking after animation
     overlay.style.display = "flex";
     overlay.style.pointerEvents = "auto"; 
 
     overlay.classList.remove("hidden");
     overlay.classList.add("show");
 
-    // Add close button dynamically if not there
     if (!document.getElementById("close-end-screen")) {
         const closeBtn = document.createElement("button");
         closeBtn.id = "close-end-screen";
@@ -418,7 +414,7 @@ function showEndGame(result) {
         closeBtn.addEventListener("click", () => {
             overlay.classList.add("hidden");
             overlay.style.pointerEvents = "none"; 
-            initGame(); // Or just close overlay
+            initGame(); 
         });
     }
 }
@@ -429,7 +425,6 @@ function showEndGame(result) {
 $('#analyzeBtn').on('click', function() { startAnalysis(); });
 
 function startAnalysis() {
-    // Hide overlay
     const overlay = document.getElementById("end-game-overlay");
     if(overlay) { overlay.classList.add("hidden"); overlay.style.pointerEvents = "none"; }
 
@@ -481,10 +476,8 @@ async function ensureEngine(){
   engineReady = false;
   
   try {
-    // Try loading from CDN (as requested in snippet)
     if(typeof STOCKFISH === 'function') engine = STOCKFISH();
     else {
-        // Fallback to blob or direct URL
         const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
         if (!response.ok) throw new Error('Network response was not ok');
         const scriptContent = await response.text();
@@ -500,7 +493,6 @@ async function ensureEngine(){
     
     if(line === 'uciok'){ engineReady = true; }
 
-    // Play Move Logic
     if(!isAnalysis && line.startsWith("bestmove")){
       let parts = line.split(' ');
       let moveStr = parts[1];
@@ -514,7 +506,6 @@ async function ensureEngine(){
       }
     }
 
-    // Analysis Logic
     if(isAnalysis && typeof line==='string') {
         if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {
             var scoreMatch = line.match(/score cp (-?\d+)/);
@@ -536,45 +527,55 @@ async function ensureEngine(){
   engine.postMessage("uci");
 }
 
-// UPDATED makeAiMove with Level 7 Logic
 function makeAiMove(){
-  if(game.game_over() || !gameActive) return;
+  if(game.game_over() || !gameActive){ 
+    isAiThinking=false; 
+    return; 
+  }
 
   ensureEngine();
-  isAiThinking = true;
+  if(engine && engineReady){
+    engine.postMessage('ucinewgame');
+    engine.postMessage('position fen ' + game.fen());
 
-  // Mapping for Levels 1-7
-  let mapping = {
-    1: 8, 2: 12, 3: 16, 
-    4: 20, 5: 24, 6: 28,
-    7: 40  // 💀 MISSION IMPOSSIBLE
-  };
+    var aiDepth = parseInt(document.getElementById("difficulty").value);
 
-  let depth = mapping[aiDepth] || 16;
+    // Difficulty map for normal levels
+    var depthMapping = {
+      1: 6,
+      2: 10,
+      3: 14,
+      4: 18,
+      5: 22,
+      6: 28
+    };
 
-  if(engine && engineReady) {
-      engine.postMessage("ucinewgame");
-      engine.postMessage("position fen " + game.fen());
-      
-      // Specific settings for Level 7
-      if(aiDepth === 7) {
-          engine.postMessage('setoption name Skill Level value 20');
-          engine.postMessage('setoption name Contempt value 20');
-          engine.postMessage("go depth " + depth);
-      } else {
-          engine.postMessage("go depth " + depth);
-      }
+    if(aiDepth === 7){
+      // ⚠️ MISSION IMPOSSIBLE MODE
+      // Ultra-deep Stockfish thinking time.
+      engine.postMessage("go movetime 5000"); // 5 seconds thinking
+    } else {
+      // Normal difficulty levels
+      var depth = depthMapping[aiDepth] || 14;
+      engine.postMessage("go depth " + depth);
+    }
+
   } else {
-      // Fallback if engine fails
-      var moves = game.moves();
-      game.move(moves[Math.floor(Math.random()*moves.length)]);
-      board.position(game.fen());
-      isAiThinking = false;
-      updateStatus();
+    // Fallback random move (in case Stockfish fails)
+    var moves = game.moves();
+    var move = moves[Math.floor(Math.random() * moves.length)];
+    game.move(move);
+    board.position(game.fen());
+    isAiThinking=false;
+    updateStatus();
+    playMoveSound();
   }
-}
+
+  if(!timerStarted) startTimer();
+} 
+
 /* =======================
-   Online Sync (Preserved)
+   Online Sync
    ======================= */
 function pushMoveToRoom(roomId, fen, san){
   if(!window.firebase || !window.firebase.database) return;
