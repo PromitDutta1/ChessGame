@@ -270,7 +270,7 @@ function updateStatus(){
 }
 
 /* =======================
-   Game Over Overlay (UPDATED)
+   Game Over Overlay (Current)
    ======================= */
 function finishGame(reasonText) {
     gameActive = false;
@@ -319,6 +319,39 @@ window.restartGame = function(){
         overlay.classList.remove('minimized');
     }
     initGame();
+}
+
+function showEndGame(result) {
+    const overlay = document.getElementById("end-game-overlay");
+    const textElement = document.getElementById("end-game-text");
+
+    textElement.textContent = result;
+
+    // Make overlay visible but non-blocking after animation
+    overlay.style.display = "flex";
+    overlay.style.pointerEvents = "auto"; 
+
+    overlay.classList.remove("hidden");
+    overlay.classList.add("show");
+
+    // Add close button dynamically if not there
+    if (!document.getElementById("close-end-screen")) {
+        const closeBtn = document.createElement("button");
+        closeBtn.id = "close-end-screen";
+        closeBtn.textContent = "✔ Continue / Analysis";
+        closeBtn.style.marginTop = "25px";
+        closeBtn.style.padding = "10px 20px";
+        closeBtn.style.fontSize = "18px";
+        closeBtn.style.borderRadius = "10px";
+        closeBtn.style.cursor = "pointer";
+
+        overlay.appendChild(closeBtn);
+
+        closeBtn.addEventListener("click", () => {
+            overlay.classList.add("hidden");
+            overlay.style.pointerEvents = "none"; 
+        });
+    }
 }
 
 /* =======================
