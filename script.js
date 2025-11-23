@@ -239,30 +239,38 @@ function ensureEngine(){
 function makeAiMove(){
   if(game.game_over() || !gameActive){ isAiThinking=false; return; }
   ensureEngine();
+
   if(engine && engineReady){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen '+game.fen());
 
-    // Mapping for levels 1-6
-    var mappingDepth = {1:12, 2:16, 3:20, 4:24, 5:30, 6:40};
-    var depth = mappingDepth[aiDepth] || 20;
+    // Stockfish unbeatable settings
+    engine.postMessage('setoption name Skill Level value 20');
+    engine.postMessage('setoption name Contempt value 0');
+    engine.postMessage('setoption name Threads value 4');
+    engine.postMessage('setoption name Hash value 256');
+    engine.postMessage('setoption name Ponder value true');
+    engine.postMessage('setoption name MultiPV value 1');
 
-    if(aiDepth >= 5){
-      // Expert / Grandmaster mode: think 5 seconds per move
-      engine.postMessage('go movetime 5000');
+    // Adaptive thinking
+    if(aiDepth <= 3){
+      var mappingDepth = {1:12,2:16,3:20};
+      engine.postMessage('go depth '+(mappingDepth[aiDepth]||16));
     } else {
-      engine.postMessage('go depth '+depth);
+      var movetime = (aiDepth===4?3000: aiDepth===5?5000:10000); // 3s/5s/10s
+      engine.postMessage('go movetime '+movetime);
     }
   } else {
     // fallback random move if engine fails
-    var moves=game.moves();
-    var move=moves[Math.floor(Math.random()*moves.length)];
+    var moves = game.moves();
+    var move = moves[Math.floor(Math.random()*moves.length)];
     game.move(move);
     board.position(game.fen());
     isAiThinking=false;
     updateStatus();
     playMoveSound();
   }
+
   if(!timerStarted) startTimer();
 }
 
