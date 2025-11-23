@@ -135,6 +135,7 @@ function initGame() {
   board = Chessboard('myBoard', config);
   board.orientation(playerColor);
 
+  // Initial update status call
   updateStatus();
   
   if(gameMode === 'ai') ensureEngine();
@@ -292,11 +293,11 @@ $('#drawBtn').on('click', function() {
 });
 
 /* =======================
-   Updated Status & Animation Logic
+   Updated Status & Banner Logic
    ======================= */
-function updateStatus(){
-  var status = '';
-  var moveColor = (game.turn() === 'b') ? 'Black' : 'White';
+function updateStatus() {
+  let status = '';
+  let moveColor = (game.turn() === 'b') ? 'Black' : 'White';
 
   if (game.in_checkmate()) {
     let winner = (moveColor === 'White') ? 'Black' : 'White';
@@ -304,30 +305,40 @@ function updateStatus(){
 
     gameActive = false;
     stopTimer();
-    
-    // Trigger board animation BEFORE showing overlay
-    triggerBoardWinAnimation(winner);
-    
-    // Finish game (shows overlay)
-    finishGame(status); 
-    return; 
+    playGameOverSound();
+
+    showEndGameBanner(`${winner} Wins by Checkmate!`, "winText");
+
+    return;
   }
 
-  else if (game.in_draw()) {
-    status = 'Game Over — Draw';
+  if (game.in_draw()) {
+    status = `Game over — Draw`;
+
     gameActive = false;
     stopTimer();
-    triggerBoardDrawAnimation();
-    finishGame(status);
+    
+    showEndGameBanner(`Draw — Stalemate`, "drawText");
+    return;
   }
 
-  else {
-    status = (!timerStarted) 
-      ? 'Waiting for First Move...' 
-      : `${moveColor} to move${game.in_check() ? ' (CHECK!)' : ''}`;
-  }
+  status = (!timerStarted)
+    ? "Waiting for first move..."
+    : `${moveColor} to move${game.in_check() ? " (CHECK!)" : ""}`;
 
   $status.text(status);
+}
+
+function showEndGameBanner(text, styleClass) {
+  let banner = document.getElementById("endGameBanner");
+  
+  banner.innerHTML = text;
+  banner.className = ""; 
+  banner.classList.add("show", styleClass);
+
+  setTimeout(() => {
+    banner.classList.remove("show");
+  }, 6000);
 }
 
 /* =======================
@@ -372,8 +383,6 @@ function showEndGame(result) {
         overlay = document.createElement('div');
         overlay.id = 'end-game-overlay';
         overlay.className = 'hidden'; 
-        // Apply styling inline or ensure CSS handles #end-game-overlay similar to #gameOverOverlay
-        // For safety, I'll add the basic structure content here
         overlay.innerHTML = `<div id="end-game-text" class="message"></div><span>🎉 Congrats!</span>`;
         document.body.appendChild(overlay);
     }
@@ -565,7 +574,6 @@ function makeAiMove(){
       updateStatus();
   }
 }
-
 /* =======================
    Online Sync (Preserved)
    ======================= */
