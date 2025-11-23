@@ -1,4 +1,9 @@
-body { font-family: Arial; text-align:center; margin:0; background:#222; color:#fff; }
-#board { margin: 20px auto; }
-#theme-selector { margin: 10px; }
-#status { margin-top: 10px; font-weight:bold; }
+body { font-family: 'Segoe UI', sans-serif; background:#212121; color:#eee; display:flex; flex-direction:column; align-items:center; justify-content:center; min-height:100vh; margin:0; padding:10px;}
+h1 { margin-bottom:20px; color:#f39c12; }
+#myBoard { width:100%; max-width:450px; }
+.timer-display { background:#000; color:#e74c3c; font-family:'Courier New', monospace; font-size:2rem; padding:10px 20px; border-radius:6px; display:flex; justify-content:space-between; margin:5px 0; }
+.timer-display.active { color:#2ecc71; border-color:#2ecc71; }
+.controls-panel { background:#333; padding:25px; border-radius:12px; width:100%; max-width:350px; display:flex; flex-direction:column; gap:15px; }
+button.primary-btn { background:#f39c12; color:#212121; font-weight:bold; padding:12px; border:none; border-radius:6px; cursor:pointer;}
+button.secondary-btn { background:#555; color:white; padding:12px; border:none; border-radius:6px; cursor:pointer;}
+.status-box { background:#444; padding:15px; border-radius:8px; border-left:5px solid #f39c12; }
