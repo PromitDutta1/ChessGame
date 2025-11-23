@@ -135,7 +135,6 @@ function initGame() {
   board = Chessboard('myBoard', config);
   board.orientation(playerColor);
 
-  // Initial update status call
   updateStatus();
   
   if(gameMode === 'ai') ensureEngine();
