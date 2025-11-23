@@ -75,8 +75,7 @@ function initGame() {
   var config = {
     draggable: true,
     position: 'start',
-    // Using default wikipedia pieces to ensure it works instantly. 
-    // Change back to 'assets/pieces/wood/{piece}.png' if you have the folder.
+    // Default wikipedia pieces.
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', 
     onDragStart: onDragStart,
     onDrop: onDrop,
@@ -89,9 +88,9 @@ function initGame() {
   board.orientation(playerColor);
 
   updateStatus();
-
-  // Pre-load engine if AI mode is selected
-  if(gameMode === 'ai') { ensureEngine(); }
+  
+  // Load engine immediately
+  if(gameMode === 'ai') ensureEngine();
 
   if(gameMode==='ai' && playerColor==='black'){ setTimeout(makeAiMove,250); }
 
@@ -209,12 +208,12 @@ function updateStatus(){
 }
 
 /* =======================
-   Stockfish AI (UPDATED FOR GOD MODE)
+   Stockfish AI (HARD & FAST)
    ======================= */
 async function ensureEngine(){
   if(engine && engineReady) return;
   
-  // Use Blob loading to ensure it works on all browsers without CORS issues
+  // Blob loading to bypass CORS
   try {
     const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
     if (!response.ok) throw new Error('Network response was not ok');
@@ -223,7 +222,7 @@ async function ensureEngine(){
     const workerUrl = URL.createObjectURL(blob);
     engine = new Worker(workerUrl);
   } catch(e) {
-    // Fallback if fetch fails
+    // Fallback
     engine = new Worker('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
   }
 
@@ -256,7 +255,6 @@ async function ensureEngine(){
 function makeAiMove(){
   if(game.game_over() || !gameActive){ isAiThinking=false; return; }
   
-  // If engine not ready yet, try loading it and wait a bit
   if(!engine || !engineReady){
       ensureEngine();
       setTimeout(makeAiMove, 500); 
@@ -267,36 +265,41 @@ function makeAiMove(){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen '+game.fen());
 
-    // === GOD MODE LOGIC ===
-    if(aiDepth === 6) {
-        // UNBEATABLE SETTINGS (IQ 180+)
-        engine.postMessage('setoption name Skill Level value 20'); // Max
-        engine.postMessage('setoption name Contempt value 20');    // Aggressive
-        engine.postMessage('setoption name Threads value 4');      // Multithreading
-        engine.postMessage('setoption name Hash value 128');       // High Memory
-        engine.postMessage('setoption name Ponder value true');
-        
-        // Deep search: Depth 22 or 8 seconds thinking
-        engine.postMessage('go depth 22 movetime 8000');
-    } else {
-        // Standard Settings
-        engine.postMessage('setoption name Skill Level value 20');
-        engine.postMessage('setoption name Contempt value 0');
-        engine.postMessage('setoption name Threads value 2');
-        engine.postMessage('setoption name MultiPV value 1');
+    // === ALL LEVELS ARE HARD (Skill Level 20) ===
+    // We only vary speed/depth to distinguish them.
+    
+    engine.postMessage('setoption name Skill Level value 20'); // Max skill for EVERYONE
+    engine.postMessage('setoption name Threads value 4');      
+    engine.postMessage('setoption name Hash value 128');
+    engine.postMessage('setoption name Ponder value true');
 
-        // Adaptive thinking for lower levels
-        if(aiDepth <= 3){
-            var mappingDepth = {1:5, 2:10, 3:15};
-            engine.postMessage('go depth '+(mappingDepth[aiDepth]||15));
-        } else {
-            // Level 4 and 5
-            var movetime = (aiDepth===4?2000:4000); 
-            engine.postMessage('go movetime '+movetime);
-        }
+    if(aiDepth === 6) {
+        // === GOD MODE ===
+        // The specific setting you requested
+        engine.postMessage('setoption name Contempt value 20'); // Aggressive
+        engine.postMessage('go depth 22'); // Depth 22 (Might take 2-5 seconds, but unbeatable)
+        
+    } else {
+        // === LEVELS 1-5 (FAST but HARD) ===
+        // We use movetime to keep it fast.
+        // Even Level 1 is Skill 20, so it won't make dumb blunders, just shallow calculation.
+        
+        engine.postMessage('setoption name Contempt value 0'); // Objective play
+
+        // Time in milliseconds
+        // Level 1: 0.4s | Level 2: 0.6s | Level 3: 0.8s | Level 4: 1.0s | Level 5: 1.2s
+        var mappingTime = {
+          1: 400,
+          2: 600,
+          3: 800,
+          4: 1000,
+          5: 1200
+        };
+        var t = mappingTime[aiDepth] || 1000;
+        engine.postMessage('go movetime ' + t);
     }
   } else {
-    // fallback random move if engine fails completely
+    // Random move fallback
     var moves = game.moves();
     var move = moves[Math.floor(Math.random()*moves.length)];
     game.move(move);
@@ -334,12 +337,12 @@ function subscribeToRoom(roomId){
     var val=snapshot.val(); if(!val) return;
     if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
   });
-  onlineUnsub=function(){ /* unsubscribe logic placeholder */ };
+  onlineUnsub=function(){};
 }
 
 $('#joinRoomBtn').on('click',async function(){
   var pref=$('#roomIdInput').val().trim();
-  if(!window.firebase || !window.firebase.database){ alert('Firebase not configured in this demo.'); return; }
+  if(!window.firebase || !window.firebase.database){ alert('Firebase not configured.'); return; }
   
   var db = window.firebase.database;
   var ref = window.firebase.databaseRef;
@@ -396,4 +399,4 @@ function setupFirebaseModuleLoader(){
     } catch(e) { console.log("Firebase not configured"); }
   `;
   document.body.appendChild(moduleScript);
-     }
+}
