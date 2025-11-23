@@ -176,3 +176,72 @@ button.secondary-btn:hover{ background:#666 }
 
 #myBoard .white-1e1d7 { background: #dcb88a !important; }
 #myBoard .black-3c85d { background: #8b5a2b !important; }
+
+/* =======================
+   Game Over Overlay
+   ======================= */
+#gameOverOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0,0,0,0.85);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  font-family: 'Segoe UI', sans-serif;
+  font-size: 2.5rem;
+  font-weight: 700;
+  text-align: center;
+  z-index: 9999;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.4s ease-in-out;
+  backdrop-filter: blur(5px);
+}
+
+#gameOverOverlay.show {
+  opacity: 1;
+  pointer-events: all;
+}
+
+#gameOverOverlay .message {
+  margin-bottom: 15px;
+  padding: 0 20px;
+}
+
+#gameOverOverlay.win { color: #2ecc71; text-shadow: 0 0 20px rgba(46,204,113,0.5); }
+#gameOverOverlay.lose { color: #e74c3c; text-shadow: 0 0 20px rgba(231,76,60,0.5); }
+#gameOverOverlay.draw { color: #f39c12; text-shadow: 0 0 20px rgba(243,156,18,0.5); }
+
+#gameOverOverlay span {
+  display: block;
+  margin-top: 10px;
+  font-size: 1.2rem;
+  font-weight: 400;
+  color: #fff;
+  opacity: 0.8;
+}
+
+#gameOverOverlay button {
+  margin-top: 35px;
+  padding: 15px 40px;
+  font-size: 1.1rem;
+  font-weight: bold;
+  border: none;
+  border-radius: 50px;
+  background: #f39c12;
+  color: #212121;
+  cursor: pointer;
+  box-shadow: 0 5px 15px rgba(243,156,18,0.4);
+  transition: all 0.2s ease-in-out;
+  width: auto;
+}
+
+#gameOverOverlay button:hover {
+  background: #e67e22;
+  transform: translateY(-3px) scale(1.05);
+  box-shadow: 0 8px 25px rgba(230,126,34,0.6);
+}
