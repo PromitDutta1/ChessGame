@@ -270,39 +270,54 @@ function updateStatus(){
 }
 
 /* =======================
-   Game Over Overlay
+   Game Over Overlay (UPDATED)
    ======================= */
 function finishGame(reasonText) {
-    gameActive = false; 
+    gameActive = false;
     stopTimer();
     $status.text(reasonText);
     playGameOverSound();
 
-    // Overlay
+    // Get or create overlay
     let overlay = document.getElementById('gameOverOverlay');
-    if(!overlay){
+    if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'gameOverOverlay';
         document.body.appendChild(overlay);
     }
 
-    overlay.innerHTML = `<div class="message">${reasonText}</div><span>🎉 Congrats!</span><button onclick="restartGame()">Restart Game</button>`;
+    overlay.innerHTML = `
+        <div class="message">${reasonText}</div>
+        <span>🎉 Congrats!</span>
+        <button id="restartBtn">Restart Game</button>
+    `;
 
     overlay.classList.remove('win','lose','draw');
-    if(reasonText.toLowerCase().includes('draw')) overlay.classList.add('draw');
-    else if(reasonText.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
+    if (reasonText.toLowerCase().includes('draw')) overlay.classList.add('draw');
+    else if (reasonText.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
     else overlay.classList.add('win');
 
     overlay.classList.add('show');
 
+    // 🔥 After 3 seconds, shrink overlay to top — no longer blocking the screen
+    setTimeout(() => {
+        overlay.classList.add('minimized');
+    }, 3000);
+
     $('#analyzeBtn').show();
     $('#gameActions').hide();
+
+    // Attach event listener for the new button
+    document.getElementById("restartBtn").addEventListener("click", restartGame);
 }
 
-// Make restartGame available globally for the inline onclick handler
+// Make restartGame available globally for the inline onclick handler/listener
 window.restartGame = function(){
     const overlay = document.getElementById('gameOverOverlay');
-    if(overlay) overlay.classList.remove('show');
+    if(overlay) {
+        overlay.classList.remove('show');
+        overlay.classList.remove('minimized');
+    }
     initGame();
 }
 
@@ -312,7 +327,7 @@ window.restartGame = function(){
 $('#analyzeBtn').on('click', function() { startAnalysis(); });
 
 function startAnalysis() {
-    // Hide overlay if analysis is clicked (though usually overlay blocks interactions, this handles edge cases)
+    // Hide overlay if analysis is clicked
     const overlay = document.getElementById('gameOverOverlay');
     if(overlay) overlay.classList.remove('show');
 
