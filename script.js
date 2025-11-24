@@ -526,11 +526,9 @@ async function ensureEngine(){
   
   engine.postMessage("uci");
 }
-
-function makeAiMove(){
+function makeAiMove() {
   if(game.game_over() || !gameActive) return;
   if(!engine || !engineReady){ 
-    // fallback random move
     const moves = game.moves();
     const move = moves[Math.floor(Math.random()*moves.length)];
     game.move(move);
@@ -543,54 +541,68 @@ function makeAiMove(){
   isAiThinking = true;
 
   // AI Thinking Animation
-  let statusText = "AI is thinking";
-  let dotCount = 0;
   const aiStatusElem = document.getElementById("aiStatus");
-  if(aiStatusElem) aiStatusElem.textContent = statusText;
-
-  const dotInterval = setInterval(()=>{
+  if(aiStatusElem) aiStatusElem.textContent = "AI is thinking";
+  let dotCount = 0;
+  const dotInterval = setInterval(() => {
     dotCount = (dotCount + 1) % 4;
-    if(aiStatusElem) aiStatusElem.textContent = statusText + '.'.repeat(dotCount);
+    if(aiStatusElem) aiStatusElem.textContent = "AI is thinking" + '.'.repeat(dotCount);
   }, 500);
 
-  // Set up AI position
+  // Ensure AI engine ready
+  ensureEngine();
+
+  const aiLevel = parseInt($('#difficulty').val());
+  const aiSettings = {
+    1: {depth: 4, movetime: 400},
+    2: {depth: 6, movetime: 600},
+    3: {depth: 8, movetime: 800},
+    4: {depth: 10, movetime: 1000},
+    5: {depth: 12, movetime: 1200},
+    6: {depth: 16, movetime: 1500}, // GOD MODE, fast
+    7: {depth: 20, movetime: 2000}  // Mission Impossible, ultra strong but faster
+  };
+  const settings = aiSettings[aiLevel] || {depth:8, movetime:800};
+
+  // Send command to Stockfish
   engine.postMessage('position fen ' + game.fen());
 
-  let aiLevel = parseInt($('#difficulty').val());
-  
-  // Difficulty mapping
-  const aiSettings = {
-    1: {depth: 4, movetime: 500},
-    2: {depth: 6, movetime: 800},
-    3: {depth: 8, movetime: 1200},
-    4: {depth: 10, movetime: 2000},
-    5: {depth: 12, movetime: 3000},
-    6: {depth: 18, movetime: 3500}, // GOD MODE, fast
-    7: {depth: 28, movetime: 5000}  // Mission Impossible
-  };
-  const settings = aiSettings[aiLevel] || {depth:8, movetime:1200};
-
-  // Use movetime for levels 6 & 7, depth for 1–5
-  if(aiLevel === 6 || aiLevel === 7){
+  if(aiLevel >= 6){
+    // Use movetime for super high levels
     engine.postMessage('go movetime ' + settings.movetime);
   } else {
+    // Depth-based for normal levels
     engine.postMessage('go depth ' + settings.depth);
   }
 
   if(!timerStarted) startTimer();
 
-  // Stop animation when AI move is received
-  const originalOnMessage = engine.onmessage;
+  // Update AI status inside engine onmessage
   engine.onmessage = function(event){
-    originalOnMessage(event);
+    const line = typeof event==='string'? event : (event.data||event);
 
-    let line = typeof event==='string'? event: (event.data||event);
-    if(line.startsWith("bestmove")){
-      clearInterval(dotInterval);
-      if(aiStatusElem) aiStatusElem.textContent = ""; // clear animation
+    // Only handle normal AI moves
+    if(!isAnalysis && line.startsWith("bestmove")){
+      const parts = line.split(' ');
+      const moveStr = parts[1];
+      if(moveStr && moveStr !== '(none)'){
+        game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });
+        board.position(game.fen());
+        isAiThinking = false;
+        if(aiStatusElem) aiStatusElem.textContent = "";
+        updateStatus();
+        updateTimerDisplay();
+        playMoveSound();
+      }
     }
-  }
+
+    // Optional: handle evaluation if in Analysis Mode
+    if(isAnalysis && typeof line === 'string'){
+      // ... your analysis handling code
+    }
+  };
 }
+
 /* =======================
    Online Sync
    ======================= */
