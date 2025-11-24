@@ -10,6 +10,23 @@
 <body>
 <h1>ProCheeser</h1>
 
+<!-- NEW MENU SECTION -->
+<div id="menu">
+  <button id="vsAI">Play vs AI</button>
+  <button id="online">Online Multiplayer</button>
+  <button id="guestPlay">Continue as Guest</button>
+</div>
+
+<div id="multiplayerMenu" class="hidden">
+  <h2>Online Mode</h2>
+  <button id="quickMatch">🔍 Quick Match</button>
+  <button id="createRoom">🏠 Create Room</button>
+  <input type="text" id="roomCode" placeholder="Enter Room Code" />
+  <!-- Note: Duplicate ID joinRoomBtn exists in main controls. JS will likely attach to the first one found. -->
+  <button id="joinRoomBtn">Join Room</button>
+  <button onclick="location.reload()">Back</button>
+</div>
+
 <!-- Death Mode Warning (Hidden by default) -->
 <div id="death-warning" style="display:none;">⚠️ You have chosen <b>MISSION IMPOSSIBLE</b>.<br>Stockfish will now play at MAXIMUM POWER.<br><small>There is no escape.</small></div>
 
