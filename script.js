@@ -541,33 +541,37 @@ function makeAiMove(){
   }
 
   isAiThinking = true;
+
+  // AI Thinking Animation
   let statusText = "AI is thinking";
   let dotCount = 0;
   const aiStatusElem = document.getElementById("aiStatus");
-  aiStatusElem.textContent = statusText;
+  if(aiStatusElem) aiStatusElem.textContent = statusText;
 
-  // Animate dots
   const dotInterval = setInterval(()=>{
     dotCount = (dotCount + 1) % 4;
-    aiStatusElem.textContent = statusText + '.'.repeat(dotCount);
+    if(aiStatusElem) aiStatusElem.textContent = statusText + '.'.repeat(dotCount);
   }, 500);
 
   // Set up AI position
   engine.postMessage('position fen ' + game.fen());
 
   let aiLevel = parseInt($('#difficulty').val());
+  
+  // Difficulty mapping
   const aiSettings = {
     1: {depth: 4, movetime: 500},
     2: {depth: 6, movetime: 800},
     3: {depth: 8, movetime: 1200},
     4: {depth: 10, movetime: 2000},
     5: {depth: 12, movetime: 3000},
-    6: {depth: 18, movetime: 3500},
-    7: {depth: 28, movetime: 5000}
+    6: {depth: 18, movetime: 3500}, // GOD MODE, fast
+    7: {depth: 28, movetime: 5000}  // Mission Impossible
   };
   const settings = aiSettings[aiLevel] || {depth:8, movetime:1200};
 
-  if(aiLevel === 7 || aiLevel === 6){
+  // Use movetime for levels 6 & 7, depth for 1–5
+  if(aiLevel === 6 || aiLevel === 7){
     engine.postMessage('go movetime ' + settings.movetime);
   } else {
     engine.postMessage('go depth ' + settings.depth);
@@ -575,16 +579,16 @@ function makeAiMove(){
 
   if(!timerStarted) startTimer();
 
-  // Stop animation once AI makes move
+  // Stop animation when AI move is received
   const originalOnMessage = engine.onmessage;
   engine.onmessage = function(event){
     originalOnMessage(event);
 
     let line = typeof event==='string'? event: (event.data||event);
-    if(!line.startsWith("bestmove")) return;
-
-    clearInterval(dotInterval);
-    aiStatusElem.textContent = ""; // clear dots
+    if(line.startsWith("bestmove")){
+      clearInterval(dotInterval);
+      if(aiStatusElem) aiStatusElem.textContent = ""; // clear animation
+    }
   }
 }
 /* =======================
