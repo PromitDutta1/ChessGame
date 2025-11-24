@@ -4,37 +4,51 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ProCheeser — Pro (Wood + AI + Online + Sound)</title>
+
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 <link rel="stylesheet" href="style.css">
+
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 </head>
 <body>
+
+<div class="user-header">
+    <div id="userInfo" style="display:none;">
+        <img id="userAvatar" src="" alt="Avatar">
+        <span id="userName">Player</span>
+        <button id="logoutBtn" class="small-btn">Logout</button>
+    </div>
+    <div id="authContainer">
+        <button id="loginBtn" class="google-btn">Sign in with Google</button>
+    </div>
+</div>
+
 <h1>ProCheeser</h1>
 
-<!-- Death Mode Warning (Hidden by default) -->
 <div id="death-warning" style="display:none;">⚠️ You have chosen <b>MISSION IMPOSSIBLE</b>.<br>Stockfish will now play at MAXIMUM POWER.<br><small>There is no escape.</small></div>
 
 <div class="main-container">
   <div class="board-section">
+    <div id="topPlayerLabel" class="player-info" style="display:none">Opponent</div>
+
     <div id="timer-black-container" class="timer-display"><span class="player-label">Black</span><span id="time-b">10:00</span></div>
     <div id="myBoard"></div>
     <div id="timer-white-container" class="timer-display"><span class="player-label">White</span><span id="time-w">10:00</span></div>
+    
+    <div id="bottomPlayerLabel" class="player-info" style="display:none">You</div>
   </div>
+
   <div class="controls-panel">
     <div class="status-box">
       <h3>Game Status</h3>
       <p id="statusText">Select settings and Start.</p>
-      <!-- AI Thinking Status -->
       <div id="aiStatus" style="font-weight:bold; color:orange; margin-top:5px;"></div>
     </div>
 
-    <!-- Game Settings (Hidden during Analysis) -->
     <div id="gameSettings">
-      <label for="gameMode">Mode</label>
-      <select id="gameMode">
-        <option value="ai">Play vs AI (Computer)</option>
-        <option value="local">Pass & Play (Human vs Human)</option>
-        <option value="online">Online Multiplayer</option>
-      </select>
+      
       <label for="timeControl">Timer Setting</label>
       <select id="timeControl">
         <option value="300">5 Minutes</option>
@@ -43,50 +57,82 @@
         <option value="3600">60 Minutes</option>
         <option value="999999">No Timer</option>
       </select>
-      <div id="aiSettings">
+
+      <label for="gameMode">Mode</label>
+      <select id="gameMode">
+        <option value="ai">Play vs AI (Computer)</option>
+        <option value="local">Pass & Play (Human vs Human)</option>
+        <option value="online_friend">Online: Play Friend</option>
+        <option value="online_random">Online: Play Random (Ranked)</option>
+      </select>
+
+      <hr style="border:0; border-top:1px solid #444; margin:10px 0;">
+
+      <div id="aiOptions" class="mode-options">
         <label for="difficulty">Hardness Level (AI IQ)</label>
         <select id="difficulty">
           <option value="1">Level 1 (Strong & Instant)</option>
           <option value="2">Level 2 (Very Strong & Instant)</option>
-          <option value="3">Level 3 (Master & Instant)</option>
+          <option value="3" selected>Level 3 (Master & Instant)</option>
           <option value="4">Level 4 (Elite & Instant)</option>
           <option value="5">Level 5 (Grandmaster Blitz)</option>
           <option value="6">Level 6 (GOD MODE - Unbeatable)</option>
           <option value="7" style="color:red;font-weight:bold;">🚨 MISSION IMPOSSIBLE (IQ ∞)</option>
         </select>
-        <label for="playerColor">Play As</label>
-        <select id="playerColor">
+        <label for="aiColor">Play As</label>
+        <select id="aiColor">
           <option value="white">White</option>
           <option value="black">Black</option>
         </select>
-      </div>
-      <button class="primary-btn" id="startBtn">Start New Game</button>
-      
-      <!-- GAME ACTIONS (Resign / Draw) -->
-      <div id="gameActions" style="display:none; gap:10px; margin-top:10px;">
-          <button id="resignBtn" class="secondary-btn" style="background:#d9534f; color:white; flex:1;">🏳 Resign</button>
-          <button id="drawBtn" class="secondary-btn" style="background:#f0ad4e; color:white; flex:1;">½ Offer Draw</button>
+        <button class="primary-btn" id="startAiBtn">Start vs AI</button>
       </div>
 
-      <!-- Analyze Button (Appears when game over) -->
-      <button class="secondary-btn" id="analyzeBtn" style="display:none; background:#4a90e2; color:white; margin-top:5px;">🔍 Analyze Game</button>
+      <div id="localOptions" class="mode-options" style="display:none;">
+          <p style="color:#aaa; font-size:0.9rem; margin-bottom:10px;">Play on this device.</p>
+          <button class="primary-btn" id="startLocalBtn">Start Pass & Play</button>
+      </div>
 
-      <div class="btn-group" id="undoRedoControls" style="margin-top:10px;">
-        <button class="secondary-btn" id="undoBtn">Undo</button>
-        <button class="secondary-btn" id="redoBtn">Redo</button>
+      <div id="friendOptions" class="mode-options" style="display:none;">
+        <label>Room ID</label>
+        <div style="display:flex; gap:5px; margin-bottom:10px;">
+            <input id="roomIdInput" placeholder="Enter ID or Empty to Create" style="width:100%; padding:10px; border-radius:5px; border:none;">
+        </div>
+        <label>Your Color (If creating)</label>
+        <select id="friendColor">
+            <option value="random">Random</option>
+            <option value="white">White</option>
+            <option value="black">Black</option>
+        </select>
+        <button class="primary-btn" id="joinCreateBtn">Create / Join Room</button>
       </div>
-      <button class="secondary-btn" id="resetBtn" style="margin-top:10px;">Reset Board</button>
-      
-      <hr style="border:none;border-top:1px solid #555;margin:6px 0">
-      
-      <strong style="color:#ccc;font-size:0.9rem">Online / Multiplayer</strong>
-      <div style="display:flex;gap:8px">
-        <input id="roomIdInput" placeholder="Room ID" style="flex:1;padding:8px;border-radius:6px;border:none;background:#444;color:#eee">
-        <button id="joinRoomBtn" class="secondary-btn">Join/Create</button>
+
+      <div id="randomOptions" class="mode-options" style="display:none;">
+         <p style="font-size:0.9rem; color:#aaa; margin-bottom:10px;">
+            Find a ranked match with a random player online. <br>
+            <span style="color:#f39c12;">* Login required.</span>
+         </p>
+         <button class="primary-btn" id="findMatchBtn">Find Match</button>
       </div>
+
     </div>
 
-    <!-- Analysis Panel (Hidden during Game) -->
+    <div id="inGameControls" style="display:none; margin-top:10px;">
+        
+        <div id="gameActions" style="display:flex; gap:10px; margin-bottom:10px;">
+            <button id="resignBtn" class="secondary-btn" style="background:#d9534f; color:white; flex:1;">🏳 Resign</button>
+            <button id="drawBtn" class="secondary-btn" style="background:#f0ad4e; color:white; flex:1;">½ Offer Draw</button>
+        </div>
+
+        <div class="btn-group" id="undoRedoControls">
+            <button class="secondary-btn" id="undoBtn">Undo</button>
+            <button class="secondary-btn" id="redoBtn">Redo</button>
+        </div>
+
+        <button class="secondary-btn" id="resetBtn" style="margin-top:10px;">Reset / Menu</button>
+    </div>
+
+    <button class="secondary-btn" id="analyzeBtn" style="display:none; background:#4a90e2; color:white; margin-top:5px;">🔍 Analyze Game</button>
+
     <div id="analysisControls" style="display:none;">
       <div style="background:#2b2b2b; padding:10px; border-radius:6px; border:1px solid #444;">
         <h3 style="margin-top:0; color:#f0d9b5; border-bottom:1px solid #444; padding-bottom:5px;">Analysis Mode</h3>
@@ -111,7 +157,6 @@
 
 <div id="endGameBanner"></div>
 
-<!-- Death Mode Sound -->
 <audio id="deathModeSound" src="https://assets.mixkit.co/sfx/preview/mixkit-creepy-laugh-414.wav"></audio>
 
 <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
