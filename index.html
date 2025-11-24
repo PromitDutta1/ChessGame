@@ -4,13 +4,12 @@
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
 <title>ProCheeser — Pro (Wood + AI + Online + Sound)</title>
-<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard.min.css"/>
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
 <h1>ProCheeser</h1>
 
-<!-- NEW MENU SECTION -->
 <div id="menu">
   <button id="vsAI">Play vs AI</button>
   <button id="online">Online Multiplayer</button>
@@ -22,12 +21,10 @@
   <button id="quickMatch">🔍 Quick Match</button>
   <button id="createRoom">🏠 Create Room</button>
   <input type="text" id="roomCode" placeholder="Enter Room Code" />
-  <!-- Note: Duplicate ID joinRoomBtn exists in main controls. JS will likely attach to the first one found. -->
   <button id="joinRoomBtn">Join Room</button>
   <button onclick="location.reload()">Back</button>
 </div>
 
-<!-- Death Mode Warning (Hidden by default) -->
 <div id="death-warning" style="display:none;">⚠️ You have chosen <b>MISSION IMPOSSIBLE</b>.<br>Stockfish will now play at MAXIMUM POWER.<br><small>There is no escape.</small></div>
 
 <div class="main-container">
@@ -36,13 +33,13 @@
     <div id="myBoard"></div>
     <div id="timer-white-container" class="timer-display"><span class="player-label">White</span><span id="time-w">10:00</span></div>
   </div>
+
   <div class="controls-panel">
     <div class="status-box">
       <h3>Game Status</h3>
       <p id="statusText">Select settings and Start.</p>
     </div>
 
-    <!-- Game Settings (Hidden during Analysis) -->
     <div id="gameSettings">
       <label for="gameMode">Mode</label>
       <select id="gameMode">
@@ -50,6 +47,7 @@
         <option value="local">Pass & Play (Human vs Human)</option>
         <option value="online">Online Multiplayer</option>
       </select>
+
       <label for="timeControl">Timer Setting</label>
       <select id="timeControl">
         <option value="300">5 Minutes</option>
@@ -58,6 +56,7 @@
         <option value="3600">60 Minutes</option>
         <option value="999999">No Timer</option>
       </select>
+
       <div id="aiSettings">
         <label for="difficulty">Hardness Level (AI IQ)</label>
         <select id="difficulty">
@@ -69,21 +68,21 @@
           <option value="6">Level 6 (GOD MODE - Unbeatable)</option>
           <option value="7" style="color:red;font-weight:bold;">🚨 MISSION IMPOSSIBLE (IQ ∞)</option>
         </select>
+
         <label for="playerColor">Play As</label>
         <select id="playerColor">
           <option value="white">White</option>
           <option value="black">Black</option>
         </select>
       </div>
+
       <button class="primary-btn" id="startBtn">Start New Game</button>
-      
-      <!-- GAME ACTIONS (Resign / Draw) -->
+
       <div id="gameActions" style="display:none; gap:10px; margin-top:10px;">
-          <button id="resignBtn" class="secondary-btn" style="background:#d9534f; color:white; flex:1;">🏳 Resign</button>
-          <button id="drawBtn" class="secondary-btn" style="background:#f0ad4e; color:white; flex:1;">½ Offer Draw</button>
+        <button id="resignBtn" class="secondary-btn" style="background:#d9534f; color:white; flex:1;">🏳 Resign</button>
+        <button id="drawBtn" class="secondary-btn" style="background:#f0ad4e; color:white; flex:1;">½ Offer Draw</button>
       </div>
 
-      <!-- Analyze Button (Appears when game over) -->
       <button class="secondary-btn" id="analyzeBtn" style="display:none; background:#4a90e2; color:white; margin-top:5px;">🔍 Analyze Game</button>
 
       <div class="btn-group" id="undoRedoControls" style="margin-top:10px;">
@@ -91,9 +90,8 @@
         <button class="secondary-btn" id="redoBtn">Redo</button>
       </div>
       <button class="secondary-btn" id="resetBtn" style="margin-top:10px;">Reset Board</button>
-      
+
       <hr style="border:none;border-top:1px solid #555;margin:6px 0">
-      
       <strong style="color:#ccc;font-size:0.9rem">Online / Multiplayer</strong>
       <div style="display:flex;gap:8px">
         <input id="roomIdInput" placeholder="Room ID" style="flex:1;padding:8px;border-radius:6px;border:none;background:#444;color:#eee">
@@ -101,21 +99,18 @@
       </div>
     </div>
 
-    <!-- Analysis Panel (Hidden during Game) -->
     <div id="analysisControls" style="display:none;">
       <div style="background:#2b2b2b; padding:10px; border-radius:6px; border:1px solid #444;">
         <h3 style="margin-top:0; color:#f0d9b5; border-bottom:1px solid #444; padding-bottom:5px;">Analysis Mode</h3>
-        
         <div style="display:flex; gap:5px; margin-bottom:10px; justify-content:center;">
-            <button id="anStart" class="secondary-btn" style="padding:5px 10px;">|&lt;</button>
-            <button id="anPrev" class="secondary-btn" style="padding:5px 15px;">&lt;</button>
-            <button id="anNext" class="secondary-btn" style="padding:5px 15px;">&gt;</button>
-            <button id="anEnd" class="secondary-btn" style="padding:5px 10px;">&gt;|</button>
+          <button id="anStart" class="secondary-btn" style="padding:5px 10px;">|&lt;</button>
+          <button id="anPrev" class="secondary-btn" style="padding:5px 15px;">&lt;</button>
+          <button id="anNext" class="secondary-btn" style="padding:5px 15px;">&gt;</button>
+          <button id="anEnd" class="secondary-btn" style="padding:5px 10px;">&gt;|</button>
         </div>
-
         <div style="font-family:monospace; color:#ccc; font-size:0.9rem;">
-            <div style="margin-bottom:4px;">Evaluation: <span id="evalScore" style="color:#fff; font-weight:bold;">...</span></div>
-            <div>Best Move: <span id="bestMove" style="color:#4a90e2;">...</span></div>
+          <div style="margin-bottom:4px;">Evaluation: <span id="evalScore" style="color:#fff; font-weight:bold;">...</span></div>
+          <div>Best Move: <span id="bestMove" style="color:#4a90e2;">...</span></div>
         </div>
       </div>
       <button id="exitAnalysisBtn" class="secondary-btn" style="width:100%; margin-top:10px;">Exit Analysis</button>
@@ -126,12 +121,13 @@
 
 <div id="endGameBanner"></div>
 
-<!-- Death Mode Sound -->
 <audio id="deathModeSound" src="https://assets.mixkit.co/sfx/preview/mixkit-creepy-laugh-414.wav"></audio>
 
+<!-- Libraries -->
 <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.12.0/chess.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard.min.js"></script>
+<script src="firebase.js"></script>
 <script src="script.js"></script>
 </body>
 </html>
