@@ -290,82 +290,106 @@ $('#drawBtn').on('click', function() {
 /* =======================
    Stockfish AI & Engine Handling
    ======================= */
-async function ensureEngine(){
-  if(engine && engineReady) return;
-  engineReady = false;
-
-  try {
-    if(typeof STOCKFISH === 'function') engine = STOCKFISH();
-    else {
-      const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
-      if(!response.ok) throw new Error('Network response was not ok');
-      const scriptContent = await response.text();
-      const blob = new Blob([scriptContent], { type:'application/javascript' });
-      engine = new Worker(URL.createObjectURL(blob));
-    }
-  } catch(e){ engine=null; return; }
-
-  engine.onmessage = function(event){
-    var line = typeof event==='string'? event: (event.data||event);
-
-    if(line==='uciok'){ engineReady=true; }
-
-    if(!isAnalysis && line.startsWith("bestmove")){
-      let parts = line.split(' ');
-      let moveStr = parts[1];
-      if(moveStr && moveStr!=='(none)'){
-        game.move({from:moveStr.substring(0,2),to:moveStr.substring(2,4),promotion:'q'});
-        board.position(game.fen());
-        isAiThinking=false;
-        updateStatus();
-        updateTimerDisplay();
-        playMoveSound();
-      }
-    }
-
-    if(isAnalysis && typeof line==='string'){
-      if(line.indexOf('score cp')!==-1 || line.indexOf('score mate')!==-1){
-        var scoreMatch=line.match(/score cp (-?\d+)/);
-        var mateMatch=line.match(/score mate (-?\d+)/);
-        if(mateMatch){ $('#evalScore').text("Mate in "+mateMatch[1]); }
-        else if(scoreMatch){ var score=parseInt(scoreMatch[1])/100; $('#evalScore').text((score>0?"+":"")+score.toFixed(2)); }
-      }
-      if(line.indexOf(' pv ')!==-1){
-        var pvMatch=line.match(/ pv ([a-h][1-8][a-h][1-8])/);
-        if(pvMatch && pvMatch[1]){ $('#bestMove').text(pvMatch[1]); }
-      }
-    }
-  };
-  engine.postMessage("uci");
+async function ensureEngine(){  
+  if(engine && engineReady) return;  
+  engineReady = false;  
+    
+  try {  
+    if(typeof STOCKFISH === 'function') engine = STOCKFISH();  
+    else {  
+        const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');  
+        if (!response.ok) throw new Error('Network response was not ok');  
+        const scriptContent = await response.text();  
+        const blob = new Blob([scriptContent], { type: 'application/javascript' });  
+        engine = new Worker(URL.createObjectURL(blob));  
+    }  
+  } catch(e) {  
+    engine = null; return;  
+  }  
+  
+  engine.onmessage = function(event){  
+    var line = typeof event==='string'? event: (event.data||event);  
+      
+    if(line === 'uciok'){ engineReady = true; }  
+  
+    if(!isAnalysis && line.startsWith("bestmove")){  
+      let parts = line.split(' ');  
+      let moveStr = parts[1];  
+      if(moveStr && moveStr !== '(none)'){  
+          game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });  
+          board.position(game.fen());  
+          isAiThinking = false;  
+          updateStatus();  
+          updateTimerDisplay();  
+          playMoveSound();  
+      }  
+    }  
+  
+    if(isAnalysis && typeof line==='string') {  
+        if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {  
+            var scoreMatch = line.match(/score cp (-?\d+)/);  
+            var mateMatch = line.match(/score mate (-?\d+)/);  
+            if(mateMatch) { $('#evalScore').text("Mate in " + mateMatch[1]); }   
+            else if(scoreMatch) { var score = parseInt(scoreMatch[1]) / 100; $('#evalScore').text((score > 0 ? "+" : "") + score.toFixed(2)); }  
+        }  
+        if(line.indexOf(' pv ') !== -1) {  
+             var pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);  
+             if(pvMatch && pvMatch[1]) {   
+                 var bm = pvMatch[1];   
+                 $('#bestMove').text(bm);   
+             }  
+        }  
+    }  
+  };  
+    
+  engine.postMessage("uci");  
+}  
+  
+function makeAiMove(){  
+  if(game.game_over() || !gameActive){   
+    isAiThinking=false;   
+    return;   
+  }  
+  
+  ensureEngine();  
+  if(engine && engineReady){  
+    engine.postMessage('ucinewgame');  
+    engine.postMessage('position fen ' + game.fen());  
+  
+    var aiDepth = parseInt(document.getElementById("difficulty").value);  
+  
+    // Difficulty map for normal levels  
+    var depthMapping = {  
+      1: 6,  
+      2: 10,  
+      3: 14,  
+      4: 18,  
+      5: 22,  
+      6: 28  
+    };  
+  
+    if(aiDepth === 7){  
+      // ⚠️ MISSION IMPOSSIBLE MODE  
+      engine.postMessage("go movetime 5000"); // 5 seconds thinking  
+    } else {  
+      // Normal difficulty levels  
+      var depth = depthMapping[aiDepth] || 14;  
+      engine.postMessage("go depth " + depth);  
+    }  
+  
+  } else {  
+    // Fallback random move  
+    var moves = game.moves();  
+    var move = moves[Math.floor(Math.random() * moves.length)];  
+    game.move(move);  
+    board.position(game.fen());  
+    isAiThinking=false;  
+    updateStatus();  
+    playMoveSound();  
+  }  
+  
+  if(!timerStarted) startTimer();  
 }
-
-function makeAiMove(){
-  if(game.game_over() || !gameActive){ isAiThinking=false; return; }
-
-  ensureEngine();
-  if(engine && engineReady){
-    engine.postMessage('ucinewgame');
-    engine.postMessage('position fen '+game.fen());
-
-    var aiDepth=parseInt(document.getElementById("difficulty").value);
-
-    var depthMapping={1:6,2:10,3:14,4:18,5:22,6:28};
-
-    if(aiDepth===7){ engine.postMessage("go movetime 5000"); }
-    else { var depth=depthMapping[aiDepth]||14; engine.postMessage("go depth "+depth); }
-  } else {
-    var moves=game.moves();
-    var move=moves[Math.floor(Math.random()*moves.length)];
-    game.move(move);
-    board.position(game.fen());
-    isAiThinking=false;
-    updateStatus();
-    playMoveSound();
-  }
-
-  if(!timerStarted) startTimer();
-}
-
 /* =======================
    Online Multiplayer Firebase
    ======================= */
