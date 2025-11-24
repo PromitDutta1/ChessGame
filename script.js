@@ -25,13 +25,17 @@ var engine = null;
 var engineReady = false;
 
 // Online multiplayer vars
+var firebaseApp = null;
+var database = null;
 var currentRoomId = null;
 var isHost = false;
 var onlineUnsub = null;
 
 // Audio Context
 var audioCtx = null;
-function ensureAudio() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+}
 
 /* =======================
    Sound Functions
@@ -57,6 +61,7 @@ function playGameOverSound(){ beep(200,0.6); }
 
 function playDeathModeSound(){
   ensureAudio();
+  // Create a deep, scary sawtooth wave
   var o = audioCtx.createOscillator();
   var g = audioCtx.createGain();
   o.type = 'sawtooth';
@@ -71,7 +76,7 @@ function playDeathModeSound(){
 }
 
 /* =======================
-   Init Game
+   Init Board & UI
    ======================= */
 function initGame() {
   if(isAnalysis) exitAnalysis();
@@ -87,18 +92,27 @@ function initGame() {
   updateTimerDisplay();
   $('#analyzeBtn').hide();
   
+  // Check Death Mode on Init
   checkDeathMode(aiDepth);
 
-  // UI visibility
-  if(gameMode==='local' || gameMode==='online'){ 
+  // Visibility Logic
+  if(gameMode === 'local'){ 
       $('#aiSettings').hide(); 
       $('#undoRedoControls').hide(); 
-      $('#gameActions').css('display','flex'); 
+      $('#gameActions').css('display','flex');
       $('#drawBtn').show(); 
-  } else { 
+  }
+  else if(gameMode === 'online'){ 
+      $('#aiSettings').hide(); 
+      $('#undoRedoControls').hide(); 
+      $('#gameActions').css('display','flex');
+      $('#drawBtn').show(); 
+  }
+  else{ 
+      // AI Mode
       $('#aiSettings').show(); 
       $('#undoRedoControls').show(); 
-      $('#gameActions').css('display','flex'); 
+      $('#gameActions').css('display','flex');
       $('#drawBtn').hide(); 
   }
 
@@ -113,8 +127,8 @@ function initGame() {
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', 
     onDragStart: onDragStart,
     onDrop: onDrop,
-    onMouseoverSquare: onMouseoverSquare,
     onMouseoutSquare: onMouseoutSquare,
+    onMouseoverSquare: onMouseoverSquare,
     onSnapEnd: onSnapEnd
   };
 
@@ -123,30 +137,33 @@ function initGame() {
 
   updateStatus();
   
-  if(gameMode==='ai') ensureEngine();
+  if(gameMode === 'ai') ensureEngine();
+
   if(gameMode==='ai' && playerColor==='black'){ setTimeout(makeAiMove,250); }
+
   if(gameMode==='online' && currentRoomId){ subscribeToRoom(currentRoomId); }
   else { if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; } }
 }
 
 /* =======================
-   Death Mode
+   Death Mode Logic
    ======================= */
+// Listener for Difficulty Change
 document.getElementById("difficulty").addEventListener("change", function(){
   aiDepth = Number(this.value);
   checkDeathMode(aiDepth);
 });
 
-function checkDeathMode(level){
+function checkDeathMode(level) {
   let warning = document.getElementById("death-warning");
-  if(level===7){
+  if(level === 7){
     if(warning) warning.style.display = "block";
     playDeathModeSound();
     document.body.style.background = "black";
     document.body.style.color = "red";
   } else {
     if(warning) warning.style.display = "none";
-    document.body.style.background = "";
+    document.body.style.background = ""; // Reset
     document.body.style.color = "";
   }
 }
@@ -167,7 +184,9 @@ function startTimer(){
 
 function stopTimer(){ if(timerInterval) clearInterval(timerInterval); timerInterval=null; }
 
-function endGameByTime(color){ finishGame(color+" ran out of time."); }
+function endGameByTime(colorWhoLost){
+  finishGame('Game Over! '+colorWhoLost+' ran out of time.');
+}
 
 function updateTimerDisplay(){
   function formatTime(t){ if(t>90000) return "∞"; var min=Math.floor(t/60); var sec=t%60; return (min<10?"0"+min:min)+":"+(sec<10?"0"+sec:sec); }
@@ -176,14 +195,15 @@ function updateTimerDisplay(){
   if(gameActive && timerStarted){
     if(game.turn()==='w'){$('#timer-white-container').addClass('active'); $('#timer-black-container').removeClass('active');}
     else{$('#timer-black-container').addClass('active'); $('#timer-white-container').removeClass('active');}
-  } else $('.timer-display').removeClass('active');
+  }else{$('.timer-display').removeClass('active');}
 }
 
 /* =======================
-   Drag & Drop
+   Drag/Drop
    ======================= */
-function onDragStart(source,piece){ 
-  if(isAnalysis || game.game_over() || !gameActive || isAiThinking) return false;
+function onDragStart(source,piece,position,orientation){
+  if(isAnalysis) return false;
+  if(game.game_over() || !gameActive || isAiThinking) return false;
   if(whiteTime<=0 || blackTime<=0) return false;
   if(gameMode==='ai'){
     if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
@@ -198,40 +218,44 @@ function onDrop(source,target){
   redoStack=[];
   if(!timerStarted) startTimer();
   updateStatus();
+  updateTimerDisplay();
   board.position(game.fen());
 
   if(gameMode==='online' && currentRoomId){ pushMoveToRoom(currentRoomId, game.fen(), move.san); }
 
-  if(gameMode==='ai' && !game.game_over()){ 
-    isAiThinking=true; 
-    $status.text("AI is thinking..."); 
-    setTimeout(makeAiMove,120); 
-  }
+  if(gameMode==='ai' && !game.game_over()){ isAiThinking=true; $status.text("AI is thinking..."); setTimeout(makeAiMove,120); }
 }
 
 function onSnapEnd(){ board.position(game.fen()); }
+
 function removeGreySquares(){ $('#myBoard .square-55d63').css('background',''); }
 function greySquare(square){ var $sq=$('#myBoard .square-'+square); var bg='#a9a9a9'; if($sq.hasClass('black-3c85d')) bg='#696969'; $sq.css('background',bg);}
-function onMouseoverSquare(square){ 
-  if(isAnalysis || game.game_over() || !gameActive || isAiThinking) return;
+function onMouseoverSquare(square,piece){ 
+  if(isAnalysis) return;
+  if(game.game_over() || !gameActive || isAiThinking) return;
   if(gameMode==='ai'){ var turn = game.turn()==='w'?'white':'black'; if(turn!==playerColor) return;}
-  var moves = game.moves({square:square,verbose:true}); if(moves.length===0) return;
+  var moves = game.moves({square:square,verbose:true});
+  if(moves.length===0) return;
   greySquare(square);
   for(var i=0;i<moves.length;i++) greySquare(moves[i].to);
 }
-function onMouseoutSquare(){ removeGreySquares(); }
+function onMouseoutSquare(square,piece){ removeGreySquares(); }
 
 /* =======================
    Undo / Redo / Reset / Resign / Draw
    ======================= */
-$('#undoBtn').click(function(){
+$('#undoBtn').on('click',function(){
   if(gameMode==='local' || !gameActive || isAiThinking) return;
   var move1=game.undo(); if(!move1) return; redoStack.push(move1);
-  if(gameMode==='ai' && move1.color!==playerColor.charAt(0)){ var move2=game.undo(); if(move2) redoStack.push(move2); }
-  board.position(game.fen()); updateStatus();
+  var justMovedColor = move1.color;
+  if(gameMode==='ai' && justMovedColor!==playerColor.charAt(0)){
+    var move2=game.undo(); if(move2) redoStack.push(move2);
+  }
+  board.position(game.fen());
+  updateStatus();
 });
 
-$('#redoBtn').click(function(){
+$('#redoBtn').on('click',function(){
   if(gameMode==='local' || !gameActive || isAiThinking) return;
   if(redoStack.length===0) return;
   var move=redoStack.pop();
@@ -240,160 +264,400 @@ $('#redoBtn').click(function(){
   updateStatus();
 });
 
-$('#resetBtn').click(function(){ if(confirm("Reset game?")) initGame(); });
-$('#resignBtn').click(function(){
-  if(!gameActive) return;
-  var loser=(game.turn()==='w')?'White':'Black';
-  if(gameMode==='ai') loser = (playerColor==='white')?'White':'Black';
-  var winner=(loser==='White')?'Black':'White';
-  if(gameMode==='online' && currentRoomId) pushGameEndToRoom(currentRoomId, winner+" won by resignation");
-  finishGame(winner + " wins! ("+loser+" resigned)");
+$('#resetBtn').on('click', function(){
+    if(!gameActive) { initGame(); return; }
+    if(confirm("Reset game?")){
+        initGame();
+    }
 });
-$('#drawBtn').click(function(){
-  if(!gameActive) return;
-  if(gameMode==='local'){ if(confirm("Offer draw?")) finishGame("Draw agreed."); }
-  else if(gameMode==='online' && currentRoomId){ pushDrawOffer(currentRoomId, (game.turn()==='w'?'white':'black')); alert("Draw offer sent."); }
+
+$('#resignBtn').on('click', function() {
+    if(!gameActive) return;
+    if(!confirm("Resign?")) return;
+    var loser = (game.turn() === 'w') ? 'White' : 'Black';
+    if(gameMode === 'ai') loser = (playerColor === 'white') ? 'White' : 'Black';
+    var winner = (loser === 'White') ? 'Black' : 'White';
+    if(gameMode === 'online' && currentRoomId) { pushGameEndToRoom(currentRoomId, winner + " won by resignation"); }
+    finishGame(winner + " wins! (" + loser + " resigned)");
+});
+
+$('#drawBtn').on('click', function() {
+    if(!gameActive) return;
+    if(gameMode === 'local') {
+        if(confirm("Offer draw?")) finishGame("Game Drawn (Agreed).");
+    } else if(gameMode === 'online' && currentRoomId) {
+        pushDrawOffer(currentRoomId, (game.turn() === 'w' ? 'white' : 'black'));
+        alert("Draw offer sent.");
+    }
 });
 
 /* =======================
-   Stockfish AI
+   Updated Status & Banner Logic
    ======================= */
-async function ensureEngine(){  
-  if(engine && engineReady) return;  
-  engineReady=false;
-  try{
-    if(typeof STOCKFISH==='function') engine=STOCKFISH();
-    else { const response=await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js'); const blob=new Blob([await response.text()],{type:'application/javascript'}); engine=new Worker(URL.createObjectURL(blob)); }
-  }catch(e){ engine=null; return; }
+function updateStatus() {
+  let status = '';
+  let moveColor = (game.turn() === 'b') ? 'Black' : 'White';
 
-  engine.onmessage=function(event){
-    var line=typeof event==='string'?event:(event.data||event);
-    if(line==='uciok'){ engineReady=true; }
+  if (game.in_checkmate()) {
+    let winner = (moveColor === 'White') ? 'Black' : 'White';
+    status = `CHECKMATE — ${winner} Wins!`;
+
+    gameActive = false;
+    stopTimer();
+    playGameOverSound();
+
+    showEndGameBanner(`${winner} Wins by Checkmate!`, "winText");
+
+    return;
+  }
+
+  if (game.in_draw()) {
+    status = `Game over — Draw`;
+
+    gameActive = false;
+    stopTimer();
+    
+    showEndGameBanner(`Draw — Stalemate`, "drawText");
+    return;
+  }
+
+  status = (!timerStarted)
+    ? "Waiting for first move..."
+    : `${moveColor} to move${game.in_check() ? " (CHECK!)" : ""}`;
+
+  $status.text(status);
+}
+
+function showEndGameBanner(text, styleClass) {
+  let banner = document.getElementById("endGameBanner");
+  
+  banner.innerHTML = text;
+  banner.className = ""; 
+  banner.classList.add("show", styleClass);
+
+  setTimeout(() => {
+    banner.classList.remove("show");
+  }, 6000);
+}
+
+/* =======================
+   Board Animations
+   ======================= */
+function triggerBoardWinAnimation(winner) {
+  let boardElem = document.getElementById("myBoard");
+  boardElem.classList.add("winner-animation");
+  setTimeout(() => {
+    boardElem.classList.remove("winner-animation");
+  }, 4000);
+}
+
+function triggerBoardDrawAnimation() {
+  let boardElem = document.getElementById("myBoard");
+  boardElem.classList.add("draw-animation");
+  setTimeout(() => {
+    boardElem.classList.remove("draw-animation");
+  }, 3000);
+}
+
+/* =======================
+   Game Over Overlay
+   ======================= */
+function finishGame(reasonText) {
+    gameActive = false;
+    stopTimer();
+    $status.text(reasonText);
+    playGameOverSound();
+
+    showEndGame(reasonText);
+
+    $('#analyzeBtn').show();
+    $('#gameActions').hide();
+}
+
+function showEndGame(result) {
+    let overlay = document.getElementById("end-game-overlay");
+    
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.id = 'end-game-overlay';
+        overlay.className = 'hidden'; 
+        overlay.innerHTML = `<div id="end-game-text" class="message"></div><span>🎉 Congrats!</span>`;
+        document.body.appendChild(overlay);
+    }
+
+    const textElement = document.getElementById("end-game-text");
+    if(textElement) textElement.textContent = result;
+
+    overlay.classList.remove('win','lose','draw');
+    if (result.toLowerCase().includes('draw')) overlay.classList.add('draw');
+    else if (result.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
+    else overlay.classList.add('win');
+
+    overlay.style.display = "flex";
+    overlay.style.pointerEvents = "auto"; 
+
+    overlay.classList.remove("hidden");
+    overlay.classList.add("show");
+
+    if (!document.getElementById("close-end-screen")) {
+        const closeBtn = document.createElement("button");
+        closeBtn.id = "close-end-screen";
+        closeBtn.textContent = "✔ Continue / Analysis";
+        closeBtn.style.marginTop = "25px";
+        closeBtn.style.padding = "10px 20px";
+        closeBtn.style.fontSize = "18px";
+        closeBtn.style.borderRadius = "10px";
+        closeBtn.style.cursor = "pointer";
+
+        overlay.appendChild(closeBtn);
+
+        closeBtn.addEventListener("click", () => {
+            overlay.classList.add("hidden");
+            overlay.style.pointerEvents = "none"; 
+            initGame(); 
+        });
+    }
+}
+
+/* =======================
+   Analysis Mode Logic
+   ======================= */
+$('#analyzeBtn').on('click', function() { startAnalysis(); });
+
+function startAnalysis() {
+    const overlay = document.getElementById("end-game-overlay");
+    if(overlay) { overlay.classList.add("hidden"); overlay.style.pointerEvents = "none"; }
+
+    isAnalysis = true; gameActive = false; stopTimer();
+    analysisHistory = game.history({ verbose: true });
+    analysisIndex = analysisHistory.length - 1;
+    $('#gameSettings').hide();
+    $('#analysisControls').show();
+    $status.text("Analysis Mode");
+    ensureEngine();
+    updateAnalysisBoard();
+}
+
+function exitAnalysis() {
+    isAnalysis = false;
+    $('#gameSettings').show();
+    $('#analysisControls').hide();
+    initGame();
+}
+
+$('#exitAnalysisBtn').on('click', exitAnalysis);
+$('#anStart').on('click', function(){ analysisIndex = -1; updateAnalysisBoard(); });
+$('#anPrev').on('click', function(){ if(analysisIndex >= -1) analysisIndex--; updateAnalysisBoard(); });
+$('#anNext').on('click', function(){ if(analysisIndex < analysisHistory.length - 1) analysisIndex++; updateAnalysisBoard(); });
+$('#anEnd').on('click', function(){ analysisIndex = analysisHistory.length - 1; updateAnalysisBoard(); });
+
+function updateAnalysisBoard() {
+    var tempGame = new Chess();
+    for(var i=0; i<=analysisIndex; i++) if(analysisHistory[i]) tempGame.move(analysisHistory[i]);
+    board.position(tempGame.fen());
+    $status.text("Move: " + (analysisIndex + 1) + " / " + analysisHistory.length);
+    removeGreySquares();
+    askEngineEval(tempGame.fen());
+}
+
+function askEngineEval(fen) {
+    if(!engine || !engineReady) return;
+    $('#evalScore').text("..."); $('#bestMove').text("...");
+    engine.postMessage('stop');
+    engine.postMessage('position fen ' + fen);
+    engine.postMessage('go depth 15');
+}
+
+/* =======================
+   Stockfish AI & Engine Handling
+   ======================= */
+async function ensureEngine(){
+  if(engine && engineReady) return;
+  engineReady = false;
+  
+  try {
+    if(typeof STOCKFISH === 'function') engine = STOCKFISH();
+    else {
+        const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+        if (!response.ok) throw new Error('Network response was not ok');
+        const scriptContent = await response.text();
+        const blob = new Blob([scriptContent], { type: 'application/javascript' });
+        engine = new Worker(URL.createObjectURL(blob));
+    }
+  } catch(e) {
+    engine = null; return;
+  }
+
+  engine.onmessage = function(event){
+    var line = typeof event==='string'? event: (event.data||event);
+    
+    if(line === 'uciok'){ engineReady = true; }
+
     if(!isAnalysis && line.startsWith("bestmove")){
-      let parts=line.split(' '); let moveStr=parts[1];
-      if(moveStr && moveStr!=='(none)'){ game.move({from:moveStr.substring(0,2),to:moveStr.substring(2,4),promotion:'q'}); board.position(game.fen()); isAiThinking=false; updateStatus(); updateTimerDisplay(); playMoveSound(); }
+      let parts = line.split(' ');
+      let moveStr = parts[1];
+      if(moveStr && moveStr !== '(none)'){
+          game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });
+          board.position(game.fen());
+          isAiThinking = false;
+          updateStatus();
+          updateTimerDisplay();
+          playMoveSound();
+      }
+    }
+
+    if(isAnalysis && typeof line==='string') {
+        if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {
+            var scoreMatch = line.match(/score cp (-?\d+)/);
+            var mateMatch = line.match(/score mate (-?\d+)/);
+            if(mateMatch) { $('#evalScore').text("Mate in " + mateMatch[1]); } 
+            else if(scoreMatch) { var score = parseInt(scoreMatch[1]) / 100; $('#evalScore').text((score > 0 ? "+" : "") + score.toFixed(2)); }
+        }
+        if(line.indexOf(' pv ') !== -1) {
+             var pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);
+             if(pvMatch && pvMatch[1]) { 
+                 var bm = pvMatch[1]; 
+                 $('#bestMove').text(bm); 
+                 // Highlight logic...
+             }
+        }
     }
   };
-
+  
   engine.postMessage("uci");
 }
 
 function makeAiMove(){
-  if(game.game_over() || !gameActive){ isAiThinking=false; return; }
+  if(game.game_over() || !gameActive){ 
+    isAiThinking=false; 
+    return; 
+  }
+
   ensureEngine();
   if(engine && engineReady){
     engine.postMessage('ucinewgame');
     engine.postMessage('position fen ' + game.fen());
-    var depthMapping={1:6,2:10,3:14,4:18,5:22,6:28};
-    if(aiDepth===7) engine.postMessage("go movetime 5000");
-    else engine.postMessage("go depth "+(depthMapping[aiDepth]||14));
+
+    var aiDepth = parseInt(document.getElementById("difficulty").value);
+
+    // Difficulty map for normal levels
+    var depthMapping = {
+      1: 6,
+      2: 10,
+      3: 14,
+      4: 18,
+      5: 22,
+      6: 28
+    };
+
+    if(aiDepth === 7){
+      // ⚠️ MISSION IMPOSSIBLE MODE
+      // Ultra-deep Stockfish thinking time.
+      engine.postMessage("go movetime 5000"); // 5 seconds thinking
+    } else {
+      // Normal difficulty levels
+      var depth = depthMapping[aiDepth] || 14;
+      engine.postMessage("go depth " + depth);
+    }
+
   } else {
-    var moves=game.moves();
-    var move=moves[Math.floor(Math.random()*moves.length)];
-    game.move(move); board.position(game.fen()); isAiThinking=false; updateStatus(); playMoveSound();
+    // Fallback random move (in case Stockfish fails)
+    var moves = game.moves();
+    var move = moves[Math.floor(Math.random() * moves.length)];
+    game.move(move);
+    board.position(game.fen());
+    isAiThinking=false;
+    updateStatus();
+    playMoveSound();
   }
+
   if(!timerStarted) startTimer();
-}
+} 
 
 /* =======================
-   Online Multiplayer (Firebase v8)
+   Online Sync
    ======================= */
 function pushMoveToRoom(roomId, fen, san){
-  if(!db) return;
-  db.ref('rooms/'+roomId).update({fen:fen,lastSan:san,timestamp:Date.now()});
-}
-function pushGameEndToRoom(roomId,text){
-  if(!db) return;
-  db.ref('rooms/'+roomId).update({gameResult:text});
-}
-function pushDrawOffer(roomId,color){
-  if(!db) return;
-  db.ref('rooms/'+roomId).update({drawOffer:color});
-}
-function subscribeToRoom(roomId){
-  if(!db) return;
-  if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
-  const roomRef=db.ref('rooms/'+roomId);
-  const listener=roomRef.on('value',function(snapshot){
-    const val=snapshot.val(); if(!val) return;
-    if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
-    if(val.gameResult && gameActive){ finishGame("Online: "+val.gameResult); }
-    if(val.drawOffer){
-      if(val.drawOffer!=='accepted' && val.drawOffer!=='rejected'){
-        if(confirm("Opponent offers a draw. Accept?")){
-          pushGameEndToRoom(roomId,"Draw agreed");
-          roomRef.update({drawOffer:'accepted'});
-        } else { roomRef.update({drawOffer:'rejected'}); }
-      }
-    }
-  });
-  onlineUnsub=function(){ roomRef.off('value',listener); };
+  if(!window.firebase || !window.firebase.database) return;
+  var db = window.firebase.database;
+  var ref = window.firebase.databaseRef;
+  var update = window.firebase.databaseUpdate;
+  update(ref(db, 'rooms/'+roomId), {fen:fen,lastSan:san,timestamp:Date.now()});
 }
 
-/* =======================
-   Join Room Button
-   ======================= */
-$('#joinRoomBtn').click(function(){
-  const roomId=$('#roomIdInput').val().trim();
-  if(!roomId){ alert("Enter a Room ID."); return; }
-  currentRoomId=roomId;
-  initGame();
-  subscribeToRoom(currentRoomId);
-  alert("Joined room: "+currentRoomId);
+function pushGameEndToRoom(roomId, text){
+    if(!window.firebase || !window.firebase.database) return;
+    window.firebase.databaseUpdate(window.firebase.databaseRef(window.firebase.database, 'rooms/'+roomId), {gameResult: text});
+}
+
+function pushDrawOffer(roomId, color){
+    if(!window.firebase || !window.firebase.database) return;
+    window.firebase.databaseUpdate(window.firebase.databaseRef(window.firebase.database, 'rooms/'+roomId), {drawOffer: color});
+}
+
+function subscribeToRoom(roomId){
+  if(!window.firebase || !window.firebase.database) return;
+  var db = window.firebase.database;
+  var ref = window.firebase.databaseRef;
+  var onValue = window.firebase.databaseOnValue;
+  if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
+  
+  var listener=onValue(ref(db, 'rooms/'+roomId), function(snapshot){
+    var val=snapshot.val(); if(!val) return;
+    if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
+    if(val.gameResult && gameActive) { finishGame("Online: " + val.gameResult); }
+    if(val.drawOffer) {
+        var myColor = $('#playerColor').val(); 
+        if(val.drawOffer !== 'accepted' && val.drawOffer !== 'rejected') {
+           if(confirm("Opponent offers a draw. Accept?")) {
+               pushGameEndToRoom(roomId, "Draw agreed");
+               window.firebase.databaseUpdate(ref(db, 'rooms/'+roomId), {drawOffer: 'accepted'});
+           } else {
+               window.firebase.databaseUpdate(ref(db, 'rooms/'+roomId), {drawOffer: 'rejected'});
+           }
+        }
+    }
+  });
+  onlineUnsub=function(){};
+}
+
+$('#joinRoomBtn').on('click',async function(){
+  var pref=$('#roomIdInput').val().trim();
+  if(!window.firebase || !window.firebase.database){ alert('Firebase not configured.'); return; }
+  var db = window.firebase.database; var ref = window.firebase.databaseRef; var set = window.firebase.databaseSet;
+  if(pref){
+    currentRoomId=pref; isHost=false; subscribeToRoom(currentRoomId);
+    alert('Joined room: '+currentRoomId);
+  }else{
+    var id=Math.random().toString(36).slice(2,9);
+    currentRoomId=id; isHost=true;
+    set(ref(db, 'rooms/'+currentRoomId), {fen:game.fen(),created:Date.now()});
+    subscribeToRoom(currentRoomId);
+    alert('Created room: '+currentRoomId+'\nShare this ID.');
+    $('#roomIdInput').val(currentRoomId);
+  }
+  $('#gameMode').val('online'); initGame();
 });
 
 /* =======================
-   Analysis Mode
+   Start / Reset
    ======================= */
-$('#analyzeBtn').click(startAnalysis);
-function startAnalysis(){
-  isAnalysis=true; gameActive=false; stopTimer();
-  analysisHistory=game.history({verbose:true});
-  analysisIndex=analysisHistory.length-1;
-  $('#gameSettings').hide();
-  $('#analysisControls').show();
-  $status.text("Analysis Mode");
-  ensureEngine();
-  updateAnalysisBoard();
-}
-function exitAnalysis(){ isAnalysis=false; $('#gameSettings').show(); $('#analysisControls').hide(); initGame(); }
-$('#exitAnalysisBtn').click(exitAnalysis);
-$('#anStart').click(()=>{ analysisIndex=-1; updateAnalysisBoard(); });
-$('#anPrev').click(()=>{ if(analysisIndex>=-1) analysisIndex--; updateAnalysisBoard(); });
-$('#anNext').click(()=>{ if(analysisIndex<analysisHistory.length-1) analysisIndex++; updateAnalysisBoard(); });
-$('#anEnd').click(()=>{ analysisIndex=analysisHistory.length-1; updateAnalysisBoard(); });
-function updateAnalysisBoard(){
-  var tempGame=new Chess();
-  for(var i=0;i<=analysisIndex;i++) if(analysisHistory[i]) tempGame.move(analysisHistory[i]);
-  board.position(tempGame.fen());
-  $status.text("Move: "+(analysisIndex+1)+" / "+analysisHistory.length);
-  removeGreySquares();
-}
+$('#startBtn').on('click',initGame);
+$('#gameMode').on('change',initGame);
 
-/* =======================
-   End-Game & UI
-   ======================= */
-function finishGame(reasonText){
-  gameActive=false; stopTimer(); $status.text(reasonText); playGameOverSound(); showEndGame(reasonText);
-  $('#analyzeBtn').show(); $('#gameActions').hide();
-}
-function showEndGame(result){
-  let overlay=document.getElementById("end-game-overlay");
-  if(!overlay){ overlay=document.createElement('div'); overlay.id='end-game-overlay'; overlay.className='hidden'; overlay.innerHTML=`<div id="end-game-text"></div>`; document.body.appendChild(overlay);}
-  const textElement=document.getElementById("end-game-text"); if(textElement) textElement.textContent=result;
-  overlay.style.display="flex"; overlay.style.pointerEvents="auto"; overlay.classList.remove("hidden");
-  if(!document.getElementById("close-end-screen")){
-    const closeBtn=document.createElement("button");
-    closeBtn.id="close-end-screen"; closeBtn.textContent="✔ Continue / Analysis";
-    closeBtn.addEventListener("click",()=>{ overlay.classList.add("hidden"); overlay.style.pointerEvents="none"; initGame(); });
-    overlay.appendChild(closeBtn);
-  }
-}
+$(document).ready(function(){
+  initGame();
+  setupFirebaseModuleLoader();
+});
 
-/* =======================
-   Start / Init
-   ======================= */
-$('#startBtn').click(initGame);
-$('#gameMode').change(initGame);
-
-$(document).ready(function(){ initGame(); });
+function setupFirebaseModuleLoader(){
+  var moduleScript=document.createElement('script');
+  moduleScript.type='module';
+  moduleScript.text=`
+    import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js';
+    import { getDatabase, ref, onValue, set, update } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js';
+    const firebaseConfig = { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", databaseURL: "YOUR_DATABASE_URL", projectId: "YOUR_PROJECT_ID", storageBucket: "YOUR_STORAGE_BUCKET", messagingSenderId: "YOUR_MESSAGING_SENDER_ID", appId: "YOUR_APP_ID" };
+    try { const app = initializeApp(firebaseConfig); const db = getDatabase(app); window.firebase={app:app,database:db,databaseRef:ref,databaseOnValue:onValue,databaseSet:set,databaseUpdate:update}; } catch(e) { console.log("Firebase not configured"); }
+  `;
+  document.body.appendChild(moduleScript);
+}
