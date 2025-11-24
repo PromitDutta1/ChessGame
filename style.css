@@ -339,3 +339,67 @@ button.secondary-btn:hover{ background:#666 }
   from { transform: scale(1); }
   to { transform: scale(1.1); }
 }
+
+/* ------ NEW ADDITIONS ------- */
+
+body {
+  background: #222;
+  color: white;
+  text-align: center;
+  font-family: Arial, sans-serif;
+}
+
+#board-container {
+  width: 400px;
+  margin: 20px auto;
+  border: 4px solid #d9a45b;
+  border-radius: 12px;
+  background: url('assets/board/wood.jpg');
+  background-size: cover;
+}
+
+button {
+  margin: 10px;
+  font-size: 18px;
+  padding: 10px 20px;
+  background: #d9a45b;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #f0c980;
+}
+
+.hidden {
+  display: none;
+}
+
+#status {
+  margin-top: 15px;
+  font-size: 20px;
+}
+
+.endPopup {
+  position: absolute;
+  width: 380px;
+  height: 380px;
+  top: 50%;
+  transform: translateY(-50%);
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(0,0,0,0.6);
+  border-radius: 12px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  font-size: 30px;
+  color: yellow;
+  animation: fade 1s infinite alternate;
+}
+
+@keyframes fade {
+  from { opacity: 0.5; }
+  to { opacity: 1; }
+}
