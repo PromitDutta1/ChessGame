@@ -1,76 +1,116 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Chess Game</title>
-
-<!-- Chessboard.js CSS -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.css" />
-
-<!-- jQuery -->
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-
-<!-- Chess.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/1.0.0/chess.min.js"></script>
-
-<!-- Chessboard.js -->
-<script src="https://cdnjs.cloudflare.com/ajax/libs/chessboard-js/1.0.0/chessboard-1.0.0.min.js"></script>
-
-<style>
-  body { font-family: sans-serif; text-align: center; background: #f0f0f0; }
-  #myBoard { width: 400px; margin: 20px auto; }
-  #statusText { margin: 10px; font-weight: bold; }
-  #gameActions button { margin: 5px; padding: 10px 15px; }
-</style>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>ProCheeser — Pro (Wood + AI + Online + Sound)</title>
+<link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
+<link rel="stylesheet" href="style.css">
 </head>
 <body>
+<h1>ProCheeser</h1>
 
-<h1>Chess Game</h1>
-
-<div id="myBoard"></div>
-<div id="statusText">Game Status</div>
-
-<div>
-  <label>Game Mode:</label>
-  <select id="gameMode">
-    <option value="ai">AI</option>
-    <option value="local">Local</option>
-    <option value="online">Online</option>
-  </select>
-
-  <label>Player Color:</label>
-  <select id="playerColor">
-    <option value="white">White</option>
-    <option value="black">Black</option>
-  </select>
-
-  <label>Difficulty:</label>
-  <select id="difficulty">
-    <option value="1">1</option>
-    <option value="2">2</option>
-    <option value="3" selected>3</option>
-    <option value="4">4</option>
-    <option value="5">5</option>
-    <option value="6">6</option>
-    <option value="7">Death</option>
-  </select>
-
-  <label>Time (seconds):</label>
-  <input type="number" id="timeControl" value="600" min="60" max="3600">
+<!-- MENU SECTION -->
+<div id="menu" style="text-align:center; margin-bottom:20px;">
+  <button id="vsAI" class="primary-btn">Play vs AI</button>
+  <button id="online" class="primary-btn">Online Multiplayer</button>
+  <button id="guestPlay" class="secondary-btn">Continue as Guest</button>
 </div>
 
-<div id="gameActions">
-  <button id="startBtn">Start Game</button>
-  <button id="undoBtn">Undo</button>
-  <button id="redoBtn">Redo</button>
-  <button id="resetBtn">Reset</button>
-  <button id="resignBtn">Resign</button>
-  <button id="drawBtn">Draw</button>
+<div id="multiplayerMenu" class="hidden" style="text-align:center; margin-bottom:20px;">
+  <h2>Online Mode</h2>
+  <button id="quickMatch" class="primary-btn">🔍 Quick Match</button>
+  <button id="createRoom" class="primary-btn">🏠 Create Room</button>
+  <br><br>
+  <input type="text" id="roomCode" placeholder="Enter Room Code" style="padding:10px; border-radius:5px;">
+  <button id="joinRoomBtn" class="secondary-btn">Join Room</button>
+  <br><br>
+  <button onclick="location.reload()" class="secondary-btn">Back</button>
 </div>
 
-<!-- Your script.js file -->
+<!-- Death Mode Warning -->
+<div id="death-warning" style="display:none;">⚠️ You have chosen <b>MISSION IMPOSSIBLE</b>.<br>Stockfish will now play at MAXIMUM POWER.<br><small>There is no escape.</small></div>
+
+<div class="main-container">
+  <div class="board-section">
+    <div id="timer-black-container" class="timer-display"><span class="player-label">Black</span><span id="time-b">10:00</span></div>
+    <div id="myBoard"></div>
+    <div id="timer-white-container" class="timer-display"><span class="player-label">White</span><span id="time-w">10:00</span></div>
+  </div>
+  <div class="controls-panel">
+    <div class="status-box">
+      <h3>Game Status</h3>
+      <p id="statusText">Select settings and Start.</p>
+    </div>
+
+    <!-- Game Settings -->
+    <div id="gameSettings">
+      <!-- Modes hidden as they are handled by top menu now -->
+      <div id="aiSettings" style="display:none;">
+        <label for="difficulty">Hardness Level (AI IQ)</label>
+        <select id="difficulty">
+          <option value="1">Level 1 (Strong & Instant)</option>
+          <option value="2">Level 2 (Very Strong & Instant)</option>
+          <option value="3">Level 3 (Master & Instant)</option>
+          <option value="4">Level 4 (Elite & Instant)</option>
+          <option value="5">Level 5 (Grandmaster Blitz)</option>
+          <option value="6">Level 6 (GOD MODE - Unbeatable)</option>
+          <option value="7" style="color:red;font-weight:bold;">🚨 MISSION IMPOSSIBLE (IQ ∞)</option>
+          <!-- Support for value 99 for compatibility -->
+          <option value="99" style="display:none;">MISSION IMPOSSIBLE</option>
+        </select>
+        <label for="playerColor">Play As</label>
+        <select id="playerColor">
+          <option value="white">White</option>
+          <option value="black">Black</option>
+        </select>
+      </div>
+      <!-- Only show this if needed, mostly controlled by Menu now -->
+      <!-- <button class="primary-btn" id="startBtn">Start New Game</button> -->
+      
+      <!-- GAME ACTIONS (Resign / Draw) -->
+      <div id="gameActions" style="display:none; gap:10px; margin-top:10px;">
+          <button id="resignBtn" class="secondary-btn" style="background:#d9534f; color:white; flex:1;">🏳 Resign</button>
+          <button id="drawBtn" class="secondary-btn" style="background:#f0ad4e; color:white; flex:1;">½ Offer Draw</button>
+      </div>
+
+      <button class="secondary-btn" id="analyzeBtn" style="display:none; background:#4a90e2; color:white; margin-top:5px;">🔍 Analyze Game</button>
+
+      <div class="btn-group" id="undoRedoControls" style="margin-top:10px;">
+        <button class="secondary-btn" id="undoBtn">Undo</button>
+        <button class="secondary-btn" id="redoBtn">Redo</button>
+      </div>
+      <button class="secondary-btn" id="resetBtn" style="margin-top:10px;">Reset Board</button>
+    </div>
+
+    <!-- Analysis Panel -->
+    <div id="analysisControls" style="display:none;">
+      <div style="background:#2b2b2b; padding:10px; border-radius:6px; border:1px solid #444;">
+        <h3 style="margin-top:0; color:#f0d9b5; border-bottom:1px solid #444; padding-bottom:5px;">Analysis Mode</h3>
+        <div style="display:flex; gap:5px; margin-bottom:10px; justify-content:center;">
+            <button id="anStart" class="secondary-btn" style="padding:5px 10px;">|&lt;</button>
+            <button id="anPrev" class="secondary-btn" style="padding:5px 15px;">&lt;</button>
+            <button id="anNext" class="secondary-btn" style="padding:5px 15px;">&gt;</button>
+            <button id="anEnd" class="secondary-btn" style="padding:5px 10px;">&gt;|</button>
+        </div>
+        <div style="font-family:monospace; color:#ccc; font-size:0.9rem;">
+            <div style="margin-bottom:4px;">Evaluation: <span id="evalScore" style="color:#fff; font-weight:bold;">...</span></div>
+            <div>Best Move: <span id="bestMove" style="color:#4a90e2;">...</span></div>
+        </div>
+      </div>
+      <button id="exitAnalysisBtn" class="secondary-btn" style="width:100%; margin-top:10px;">Exit Analysis</button>
+    </div>
+
+  </div>
+</div>
+
+<div id="endGameBanner"></div>
+
+<audio id="deathModeSound" src="https://assets.mixkit.co/sfx/preview/mixkit-creepy-laugh-414.wav"></audio>
+
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/chess.js/0.10.3/chess.min.js"></script>
 <script src="script.js"></script>
-
 </body>
 </html>
