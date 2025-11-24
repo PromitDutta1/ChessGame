@@ -522,41 +522,62 @@ function finishGame(reasonText) {
     $('#analyzeBtn').show();
 }
 
+/* =======================
+   UPDATED: showEndGame Function
+   (Replaces the old one to add "Main Menu" button)
+   ======================= */
 function showEndGame(result) {
     let overlay = document.getElementById("end-game-overlay");
+    
+    // 1. Create overlay if it doesn't exist
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'end-game-overlay';
         overlay.className = 'hidden'; 
-        overlay.innerHTML = `<div id="end-game-text" class="message"></div><span>🎉 Game Over</span>`;
+        
+        // NEW STRUCTURE: Message + Two Buttons
+        overlay.innerHTML = `
+            <div id="end-game-text" class="message"></div>
+            <span style="font-size: 2rem; margin-bottom: 20px;">🎉 Game Over</span>
+            <div style="display:flex; gap:15px; width:100%; justify-content:center;">
+                <button id="overlay-analyze-btn" style="padding:15px 25px; font-size:18px; border-radius:10px; border:none; background:#4a90e2; color:white; cursor:pointer; font-weight:bold;">🔍 Analyze</button>
+                <button id="overlay-menu-btn" style="padding:15px 25px; font-size:18px; border-radius:10px; border:none; background:#2ecc71; color:white; cursor:pointer; font-weight:bold;">🏠 Main Menu</button>
+            </div>
+        `;
         document.body.appendChild(overlay);
+        
+        // 2. Add Button Listeners (Only once)
+        document.getElementById('overlay-analyze-btn').addEventListener('click', () => {
+             startAnalysis();
+        });
+
+        document.getElementById('overlay-menu-btn').addEventListener('click', () => {
+             overlay.classList.add("hidden");
+             overlay.style.pointerEvents = "none";
+             location.reload(); // 🔄 THIS RELOADS THE PAGE TO GO TO MENU
+        });
     }
+
     const textElement = document.getElementById("end-game-text");
     if(textElement) textElement.textContent = result;
-    
+
+    // 3. Set colors (Win/Lose/Draw)
     overlay.classList.remove('win','lose','draw');
     if (result.toLowerCase().includes('draw')) overlay.classList.add('draw');
     else if (result.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
     else overlay.classList.add('win');
 
+    // 4. Show Overlay
+    overlay.style.display = "flex";
+    overlay.style.pointerEvents = "auto"; 
     overlay.classList.remove("hidden");
     overlay.classList.add("show");
-    overlay.style.pointerEvents = "auto";
-
-    if (!document.getElementById("close-end-screen")) {
-        const closeBtn = document.createElement("button");
-        closeBtn.id = "close-end-screen";
-        closeBtn.textContent = "✔ Analysis / Menu";
-        closeBtn.style.marginTop = "20px";
-        closeBtn.style.padding = "10px";
-        closeBtn.style.fontSize = "16px";
-        overlay.appendChild(closeBtn);
-        closeBtn.addEventListener("click", () => {
-            overlay.classList.add("hidden");
-            overlay.style.pointerEvents = "none"; 
-        });
-    }
+    
+    // Remove old button if it exists from previous versions
+    const oldBtn = document.getElementById("close-end-screen");
+    if(oldBtn) oldBtn.remove();
 }
+
 
 
 // 11. ANALYSIS MODE
