@@ -690,6 +690,14 @@ $('#drawBtn').on('click', function() {
 
 // Final Bind
 $(document).ready(function(){
-  board = Chessboard('myBoard', 'start');
+  
+  var config = {
+    position: 'start',
+    // This tells the board to look in your local folder
+    pieceTheme: 'assets/pieces/{piece}.png'
+  };
+
+  board = Chessboard('myBoard', config);
   $('#inGameControls').hide();
 });
+
