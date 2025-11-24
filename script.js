@@ -572,7 +572,7 @@ function makeAiMove(){
   }
 
   if(!timerStarted) startTimer();
-} 
+}
 
 /* =======================
    Online Sync
