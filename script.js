@@ -526,81 +526,65 @@ async function ensureEngine(){
   
   engine.postMessage("uci");
 }
-function makeAiMove() {
-  if(game.game_over() || !gameActive) return;
-  if(!engine || !engineReady){ 
-    const moves = game.moves();
-    const move = moves[Math.floor(Math.random()*moves.length)];
-    game.move(move);
-    board.position(game.fen());
-    updateStatus();
-    playMoveSound();
-    return;
-  }
-
-  isAiThinking = true;
-
-  // AI Thinking Animation
-  const aiStatusElem = document.getElementById("aiStatus");
-  if(aiStatusElem) aiStatusElem.textContent = "AI is thinking";
-  let dotCount = 0;
-  const dotInterval = setInterval(() => {
-    dotCount = (dotCount + 1) % 4;
-    if(aiStatusElem) aiStatusElem.textContent = "AI is thinking" + '.'.repeat(dotCount);
-  }, 500);
-
-  // Ensure AI engine ready
-  ensureEngine();
-
-  const aiLevel = parseInt($('#difficulty').val());
-  const aiSettings = {
-    1: {depth: 4, movetime: 400},
-    2: {depth: 6, movetime: 600},
-    3: {depth: 8, movetime: 800},
-    4: {depth: 10, movetime: 1000},
-    5: {depth: 12, movetime: 1200},
-    6: {depth: 16, movetime: 1500}, // GOD MODE, fast
-    7: {depth: 20, movetime: 2000}  // Mission Impossible, ultra strong but faster
-  };
-  const settings = aiSettings[aiLevel] || {depth:8, movetime:800};
-
-  // Send command to Stockfish
-  engine.postMessage('position fen ' + game.fen());
-
-  if(aiLevel >= 6){
-    // Use movetime for super high levels
-    engine.postMessage('go movetime ' + settings.movetime);
-  } else {
-    // Depth-based for normal levels
-    engine.postMessage('go depth ' + settings.depth);
-  }
-
-  if(!timerStarted) startTimer();
-
-  // Update AI status inside engine onmessage
-  engine.onmessage = function(event){
-    const line = typeof event==='string'? event : (event.data||event);
-
-    // Only handle normal AI moves
-    if(!isAnalysis && line.startsWith("bestmove")){
-      const parts = line.split(' ');
-      const moveStr = parts[1];
-      if(moveStr && moveStr !== '(none)'){
-        game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });
+function makeAiMove(){
+    if(game.game_over() || !gameActive) return;
+    if(!engine || !engineReady){
+        // fallback random move
+        const moves = game.moves();
+        const move = moves[Math.floor(Math.random()*moves.length)];
+        game.move(move);
         board.position(game.fen());
-        isAiThinking = false;
-        if(aiStatusElem) aiStatusElem.textContent = "";
         updateStatus();
-        updateTimerDisplay();
         playMoveSound();
-      }
+        return;
     }
 
-    // Optional: handle evaluation if in Analysis Mode
-    if(isAnalysis && typeof line === 'string'){
-      // ... your analysis handling code
+    isAiThinking = true;
+
+    // AI thinking animation
+    const aiStatusElem = document.getElementById("aiStatus");
+    if(aiStatusElem) aiStatusElem.textContent = "AI is thinking";
+    let dotCount = 0;
+    const dotInterval = setInterval(() => {
+        dotCount = (dotCount + 1) % 4;
+        if(aiStatusElem) aiStatusElem.textContent = "AI is thinking" + '.'.repeat(dotCount);
+    }, 500);
+
+    if(!timerStarted) startTimer();
+
+    // AI Level
+    const aiLevel = parseInt($('#difficulty').val());
+
+    // AI settings for fast moves + strong levels
+    const aiSettings = {
+        1: {depth: 6, movetime: 100},
+        2: {depth: 8, movetime: 200},
+        3: {depth: 10, movetime: 300},
+        4: {depth: 12, movetime: 400},
+        5: {depth: 14, movetime: 500},
+        6: {depth: 18, movetime: 1200}, // unbeatable but fast
+        7: {depth: 28, movetime: 2000}  // Mission Impossible (~2s)
+    };
+    const settings = aiSettings[aiLevel] || {depth:10, movetime:300};
+
+    // Send Stockfish commands
+    engine.postMessage('ucinewgame');
+    engine.postMessage('position fen ' + game.fen());
+    if(aiLevel >= 6) engine.postMessage('go movetime ' + settings.movetime);
+    else engine.postMessage('go depth ' + settings.depth);
+
+    // Clear animation once move is applied
+    const originalOnMessage = engine.onmessage;
+    engine.onmessage = function(event){
+        originalOnMessage(event);
+
+        const line = typeof event === 'string'? event : (event.data || event);
+        if(!isAnalysis && line.startsWith("bestmove")){
+            clearInterval(dotInterval);
+            if(aiStatusElem) aiStatusElem.textContent = "";
+            isAiThinking = false;
+        }
     }
-  };
 }
 
 /* =======================
