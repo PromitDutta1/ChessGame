@@ -1,11 +1,32 @@
-/* =======================
-   Core game vars & UI
-   ======================= */
+/* =========================================================================
+   PART 1: CONFIG, AUTH, AND SOUND ENGINE
+   ========================================================================= */
+
+// 1. FIREBASE INITIALIZATION
+const firebaseConfig = {
+  apiKey: "AIzaSyB_Xz-MtXJD5nHfElP5MmhN2T6iNJlYMSk",
+  authDomain: "procheeser-824bf.firebaseapp.com",
+  projectId: "procheeser-824bf",
+  storageBucket: "procheeser-824bf.firebasestorage.app",
+  messagingSenderId: "1073557932074",
+  appId: "1:1073557932074:web:6ba905d0b6caeee61d9b53",
+  measurementId: "G-D94BYJCPDW",
+  databaseURL: "https://procheeser-824bf-default-rtdb.firebaseio.com/"
+};
+
+if (!firebase.apps.length) {
+    firebase.initializeApp(firebaseConfig);
+}
+const auth = firebase.auth();
+const db = firebase.database();
+const provider = new firebase.auth.GoogleAuthProvider();
+
+// 2. GLOBAL VARIABLES
 var board = null;
 var game = new Chess();
 var $status = $('#statusText');
 
-var gameMode = 'ai';
+var gameMode = 'ai'; // 'ai', 'local', 'online_friend', 'online_random'
 var aiDepth = 3;
 var playerColor = 'white';
 var isAiThinking = false;
@@ -15,20 +36,18 @@ var whiteTime = 600, blackTime = 600;
 var gameActive = false, timerStarted = false;
 var redoStack = [];
 
-// Analysis Vars
+// Analysis State
 var isAnalysis = false;
 var analysisHistory = [];
 var analysisIndex = -1;
 
-// Stockfish engine wrapper
+// Stockfish Engine
 var engine = null;
 var engineReady = false;
 
-// Online multiplayer vars
-var firebaseApp = null;
-var database = null;
+// Online State
+var currentUser = null; 
 var currentRoomId = null;
-var isHost = false;
 var onlineUnsub = null;
 
 // Audio Context
@@ -37,9 +56,32 @@ function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
 
-/* =======================
-   Sound Functions
-   ======================= */
+// 3. AUTHENTICATION HANDLERS
+$('#loginBtn').on('click', () => {
+    auth.signInWithPopup(provider).catch(e => alert(e.message));
+});
+
+$('#logoutBtn').on('click', () => {
+    auth.signOut();
+    location.reload();
+});
+
+auth.onAuthStateChanged(user => {
+    currentUser = user;
+    if (user) {
+        $('#authContainer').hide();
+        $('#userInfo').css('display', 'flex');
+        $('#userName').text(user.displayName.split(' ')[0]);
+        $('#userAvatar').attr('src', user.photoURL);
+        $('#bottomPlayerLabel').text(user.displayName);
+    } else {
+        $('#authContainer').show();
+        $('#userInfo').hide();
+        $('#bottomPlayerLabel').text("You (Guest)");
+    }
+});
+
+// 4. SOUND ENGINE (Original Preserved)
 function beep(freq,dur,when=0){
   ensureAudio();
   var o=audioCtx.createOscillator();
@@ -61,7 +103,6 @@ function playGameOverSound(){ beep(200,0.6); }
 
 function playDeathModeSound(){
   ensureAudio();
-  // Create a deep, scary sawtooth wave
   var o = audioCtx.createOscillator();
   var g = audioCtx.createGain();
   o.type = 'sawtooth';
@@ -75,44 +116,64 @@ function playDeathModeSound(){
   o.stop(audioCtx.currentTime + 2);
 }
 
-/* =======================
-   Init Board & UI
-   ======================= */
-function initGame() {
+// 5. INITIALIZATION & UI SETUP
+$('#gameMode').on('change', function() {
+    $('.mode-options').hide();
+    let mode = $(this).val();
+    if(mode === 'ai') { $('#aiOptions').show(); }
+    else if(mode === 'local') { $('#localOptions').show(); }
+    else if(mode === 'online_friend') { $('#friendOptions').show(); }
+    else if(mode === 'online_random') { $('#randomOptions').show(); }
+});
+
+$('#startAiBtn').on('click', () => initGame('ai'));
+$('#startLocalBtn').on('click', () => initGame('local'));
+$('#joinCreateBtn').on('click', () => initOnlineFriend());
+$('#findMatchBtn').on('click', () => initOnlineRandom());
+
+function initGame(mode, roomId = null, assignedColor = null) {
   if(isAnalysis) exitAnalysis();
 
   stopTimer();
   timerStarted = false;
-  gameMode = $('#gameMode').val();
+  if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
+  
+  gameMode = mode || 'ai';
+  currentRoomId = roomId;
+  
+  // Settings
   aiDepth = parseInt($('#difficulty').val()) || 3;
-  playerColor = $('#playerColor').val();
+  checkDeathMode(aiDepth); // Original Visuals
+
+  if(gameMode === 'ai') {
+      playerColor = $('#aiColor').val();
+  } else if(gameMode.includes('online')) {
+      playerColor = assignedColor || 'white';
+  } else {
+      playerColor = 'white';
+  }
+
   var startSeconds = parseInt($('#timeControl').val());
   whiteTime = startSeconds; blackTime = startSeconds;
+  
   gameActive = true;
   updateTimerDisplay();
-  $('#analyzeBtn').hide();
   
-  // Check Death Mode on Init
-  checkDeathMode(aiDepth);
-
-  // Visibility Logic
+  // UI States
+  $('#analyzeBtn').hide();
+  $('#gameSettings').hide();
+  $('#inGameControls').show();
+  
   if(gameMode === 'local'){ 
-      $('#aiSettings').hide(); 
       $('#undoRedoControls').hide(); 
-      $('#gameActions').css('display','flex');
-      $('#drawBtn').show(); 
+      $('#drawBtn').hide(); 
   }
-  else if(gameMode === 'online'){ 
-      $('#aiSettings').hide(); 
+  else if(gameMode.includes('online')){ 
       $('#undoRedoControls').hide(); 
-      $('#gameActions').css('display','flex');
       $('#drawBtn').show(); 
   }
   else{ 
-      // AI Mode
-      $('#aiSettings').show(); 
       $('#undoRedoControls').show(); 
-      $('#gameActions').css('display','flex');
       $('#drawBtn').hide(); 
   }
 
@@ -124,6 +185,7 @@ function initGame() {
   var config = {
     draggable: true,
     position: 'start',
+    orientation: playerColor,
     pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', 
     onDragStart: onDragStart,
     onDrop: onDrop,
@@ -133,44 +195,261 @@ function initGame() {
   };
 
   board = Chessboard('myBoard', config);
-  board.orientation(playerColor);
 
   updateStatus();
   
-  if(gameMode === 'ai') ensureEngine();
+  if(gameMode === 'ai') {
+      ensureEngine();
+      if(playerColor === 'black') setTimeout(makeAiMove, 250);
+  }
+  else if(gameMode.includes('online')) {
+      subscribeToRoom(currentRoomId);
+  }
+}
+/* =========================================================================
+   PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
+   ========================================================================= */
 
-  if(gameMode==='ai' && playerColor==='black'){ setTimeout(makeAiMove,250); }
+// 6. ONLINE MATCHMAKING
+async function initOnlineRandom() {
+    if (!currentUser) { alert("Login required for Ranked Matches."); return; }
+    $('#findMatchBtn').text("Searching...");
 
-  if(gameMode==='online' && currentRoomId){ subscribeToRoom(currentRoomId); }
-  else { if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; } }
+    const snapshot = await db.ref('rooms').orderByChild('status').equalTo('waiting_random').limitToFirst(1).get();
+
+    if (snapshot.exists()) {
+        const rid = Object.keys(snapshot.val())[0];
+        if (snapshot.val()[rid].hostUid !== currentUser.uid) {
+             await db.ref('rooms/' + rid).update({
+                status: 'playing',
+                blackPlayer: currentUser.uid,
+                blackName: currentUser.displayName
+            });
+            initGame('online_random', rid, 'black');
+            return;
+        }
+    }
+
+    const newRid = db.ref('rooms').push().key;
+    await db.ref('rooms/' + newRid).set({
+        status: 'waiting_random',
+        hostUid: currentUser.uid,
+        whitePlayer: currentUser.uid,
+        whiteName: currentUser.displayName,
+        fen: 'start',
+        created: firebase.database.ServerValue.TIMESTAMP
+    });
+    initGame('online_random', newRid, 'white');
+    $status.text("Searching for opponent...");
 }
 
-/* =======================
-   Death Mode Logic
-   ======================= */
-// Listener for Difficulty Change
-document.getElementById("difficulty").addEventListener("change", function(){
-  aiDepth = Number(this.value);
-  checkDeathMode(aiDepth);
-});
+async function initOnlineFriend() {
+    let roomId = $('#roomIdInput').val().trim();
+    let chosenColor = $('#friendColor').val();
 
-function checkDeathMode(level) {
-  let warning = document.getElementById("death-warning");
-  if(level === 7){
-    if(warning) warning.style.display = "block";
-    playDeathModeSound();
-    document.body.style.background = "black";
-    document.body.style.color = "red";
-  } else {
-    if(warning) warning.style.display = "none";
-    document.body.style.background = ""; // Reset
-    document.body.style.color = "";
+    if (!roomId) {
+        roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
+        let hostColor = 'white';
+        if(chosenColor === 'black') hostColor = 'black';
+        else if(chosenColor === 'random') hostColor = Math.random() < 0.5 ? 'white' : 'black';
+        
+        await db.ref('rooms/' + roomId).set({
+            fen: 'start',
+            status: 'waiting',
+            hostColor: hostColor,
+            whitePlayer: (hostColor === 'white' ? (currentUser ? currentUser.uid : 'GuestHost') : null),
+            blackPlayer: (hostColor === 'black' ? (currentUser ? currentUser.uid : 'GuestHost') : null),
+            created: firebase.database.ServerValue.TIMESTAMP
+        });
+        $('#roomIdInput').val(roomId);
+        alert(`Room Created: ${roomId}`);
+        initGame('online_friend', roomId, hostColor);
+    } else {
+        const snap = await db.ref('rooms/' + roomId).get();
+        if(!snap.exists()) { alert("Room not found!"); return; }
+        
+        const val = snap.val();
+        let myColor = (val.whitePlayer) ? 'black' : 'white';
+        await db.ref('rooms/' + roomId).update({ status: 'playing' });
+        initGame('online_friend', roomId, myColor);
+    }
+}
+
+function subscribeToRoom(roomId){
+  if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
+  
+  const roomRef = db.ref('rooms/' + roomId);
+  onlineUnsub = roomRef.on('value', (snapshot) => {
+    var val=snapshot.val(); if(!val) return;
+    
+    // Sync Board
+    if(val.fen && val.fen!==game.fen() && val.fen !== 'start'){ 
+        game.load(val.fen); 
+        board.position(game.fen()); 
+        updateStatus(); 
+        playMoveSound();
+        if(!timerStarted && val.status === 'playing') startTimer();
+    }
+    
+    // Sync Start
+    if(val.status === 'playing' && $status.text().includes("Searching")){
+        $status.text("Opponent Found! Game Started.");
+        playCheckSound();
+    }
+    
+    // Sync Result
+    if(val.gameResult && gameActive) { 
+        finishGame("Online: " + val.gameResult); 
+    }
+    
+    // Sync Draw
+    if(val.drawOffer && val.drawOffer !== playerColor) {
+        if(confirm("Opponent offers a draw. Accept?")) {
+            pushGameEndToRoom(roomId, "Draw agreed");
+            roomRef.update({drawOffer: null});
+        } else {
+            roomRef.update({drawOffer: null}); 
+            alert("Draw rejected");
+        }
+    }
+  });
+}
+
+function pushMoveToRoom(roomId, fen, san){
+    db.ref('rooms/'+roomId).update({ fen: fen, lastSan: san, timestamp: firebase.database.ServerValue.TIMESTAMP });
+}
+function pushGameEndToRoom(roomId, text){ db.ref('rooms/'+roomId).update({ gameResult: text }); }
+function pushDrawOffer(roomId, color){ db.ref('rooms/'+roomId).update({ drawOffer: color }); }
+
+
+// 7. STOCKFISH AI (Original Logic Preserved)
+async function ensureEngine(){
+  if(engine && engineReady) return;
+  engineReady = false;
+  try {
+      const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
+      const scriptContent = await response.text();
+      const blob = new Blob([scriptContent], { type: 'application/javascript' });
+      engine = new Worker(URL.createObjectURL(blob));
+  } catch(e) { engine = null; return; }
+
+  engine.onmessage = function(event){
+    var line = typeof event==='string'? event: (event.data||event);
+    if(line === 'uciok'){ engineReady = true; }
+
+    if(!isAnalysis && line.startsWith("bestmove")){
+      let parts = line.split(' ');
+      let moveStr = parts[1];
+      if(moveStr && moveStr !== '(none)'){
+          game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });
+          board.position(game.fen());
+          isAiThinking = false;
+          updateStatus();
+          updateTimerDisplay();
+          playMoveSound();
+          
+          const aiStatusElem = document.getElementById("aiStatus");
+          if(aiStatusElem) aiStatusElem.textContent = "";
+      }
+    }
+
+    if(isAnalysis && typeof line==='string') {
+        if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {
+            var scoreMatch = line.match(/score cp (-?\d+)/);
+            var mateMatch = line.match(/score mate (-?\d+)/);
+            if(mateMatch) { $('#evalScore').text("Mate in " + mateMatch[1]); } 
+            else if(scoreMatch) { var score = parseInt(scoreMatch[1]) / 100; $('#evalScore').text((score > 0 ? "+" : "") + score.toFixed(2)); }
+        }
+        if(line.indexOf(' pv ') !== -1) {
+             var pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);
+             if(pvMatch && pvMatch[1]) $('#bestMove').text(pvMatch[1]);
+        }
+    }
+  };
+  engine.postMessage("uci");
+}
+
+function makeAiMove(){
+    if(game.game_over() || !gameActive || !engine) return;
+
+    isAiThinking = true;
+    const aiStatusElem = document.getElementById("aiStatus");
+    if(aiStatusElem) {
+        aiStatusElem.textContent = "AI is thinking";
+        let dots = 0;
+        let int = setInterval(() => { 
+            if(!isAiThinking) clearInterval(int);
+            dots=(dots+1)%4; aiStatusElem.textContent="AI is thinking"+'.'.repeat(dots); 
+        }, 500);
+    }
+
+    if(!timerStarted) startTimer();
+
+    // Specific AI Levels (Preserved)
+    const aiSettings = {
+        1: {depth: 6, movetime: 100},
+        2: {depth: 8, movetime: 200},
+        3: {depth: 10, movetime: 300},
+        4: {depth: 12, movetime: 400},
+        5: {depth: 14, movetime: 500},
+        6: {depth: 18, movetime: 1200}, 
+        7: {depth: 28, movetime: 2000} 
+    };
+    const settings = aiSettings[aiDepth] || {depth:10, movetime:300};
+
+    engine.postMessage('ucinewgame');
+    engine.postMessage('position fen ' + game.fen());
+    if(aiDepth >= 6) engine.postMessage('go movetime ' + settings.movetime);
+    else engine.postMessage('go depth ' + settings.depth);
+}
+
+
+// 8. MOVE HANDLERS
+function onDragStart(source,piece){
+  if(isAnalysis) return false;
+  if(game.game_over() || !gameActive || isAiThinking) return false;
+  if(whiteTime<=0 || blackTime<=0) return false;
+  
+  if(gameMode==='ai'){
+    if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
+  }
+  
+  if(gameMode.includes('online')) {
+      if(playerColor === 'white' && game.turn() === 'b') return false;
+      if(playerColor === 'black' && game.turn() === 'w') return false;
+      if($status.text().includes("Searching")) return false;
   }
 }
 
-/* =======================
-   Timer
-   ======================= */
+function onDrop(source,target){
+  var move=game.move({from:source,to:target,promotion:'q'});
+  if(move===null) return 'snapback';
+  
+  if(move.captured) playCaptureSound(); else playMoveSound();
+  if(game.in_check()) playCheckSound();
+  
+  redoStack=[];
+  if(!timerStarted) startTimer();
+  updateStatus();
+  updateTimerDisplay();
+  board.position(game.fen());
+
+  if(gameMode.includes('online') && currentRoomId){ 
+      pushMoveToRoom(currentRoomId, game.fen(), move.san); 
+  }
+
+  if(gameMode==='ai' && !game.game_over()){ 
+      isAiThinking=true; 
+      $status.text("AI is thinking..."); 
+      setTimeout(makeAiMove,120); 
+  }
+}
+function onSnapEnd(){ board.position(game.fen()); }
+/* =========================================================================
+   PART 3: UI ACTIONS, ANALYSIS, AND GAME OVER OVERLAY
+   ========================================================================= */
+
+// 9. TIMER LOGIC
 function startTimer(){
   if(timerInterval) clearInterval(timerInterval);
   timerStarted=true;
@@ -181,11 +460,15 @@ function startTimer(){
     updateTimerDisplay();
   },1000);
 }
-
 function stopTimer(){ if(timerInterval) clearInterval(timerInterval); timerInterval=null; }
 
 function endGameByTime(colorWhoLost){
-  finishGame('Game Over! '+colorWhoLost+' ran out of time.');
+  if(gameMode.includes('online')) {
+      let winner = (colorWhoLost === 'White') ? 'Black' : 'White';
+      pushGameEndToRoom(currentRoomId, `${winner} won on time`);
+  } else {
+      finishGame('Game Over! '+colorWhoLost+' ran out of time.');
+  }
 }
 
 function updateTimerDisplay(){
@@ -198,240 +481,94 @@ function updateTimerDisplay(){
   }else{$('.timer-display').removeClass('active');}
 }
 
-/* =======================
-   Drag/Drop
-   ======================= */
-function onDragStart(source,piece,position,orientation){
-  if(isAnalysis) return false;
-  if(game.game_over() || !gameActive || isAiThinking) return false;
-  if(whiteTime<=0 || blackTime<=0) return false;
-  if(gameMode==='ai'){
-    if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
-  }
-}
 
-function onDrop(source,target){
-  var move=game.move({from:source,to:target,promotion:'q'});
-  if(move===null) return 'snapback';
-  if(move.captured) playCaptureSound(); else playMoveSound();
-  if(game.in_check()) playCheckSound();
-  redoStack=[];
-  if(!timerStarted) startTimer();
-  updateStatus();
-  updateTimerDisplay();
-  board.position(game.fen());
-
-  if(gameMode==='online' && currentRoomId){ pushMoveToRoom(currentRoomId, game.fen(), move.san); }
-
-  if(gameMode==='ai' && !game.game_over()){ isAiThinking=true; $status.text("AI is thinking..."); setTimeout(makeAiMove,120); }
-}
-
-function onSnapEnd(){ board.position(game.fen()); }
-
-function removeGreySquares(){ $('#myBoard .square-55d63').css('background',''); }
-function greySquare(square){ var $sq=$('#myBoard .square-'+square); var bg='#a9a9a9'; if($sq.hasClass('black-3c85d')) bg='#696969'; $sq.css('background',bg);}
-function onMouseoverSquare(square,piece){ 
-  if(isAnalysis) return;
-  if(game.game_over() || !gameActive || isAiThinking) return;
-  if(gameMode==='ai'){ var turn = game.turn()==='w'?'white':'black'; if(turn!==playerColor) return;}
-  var moves = game.moves({square:square,verbose:true});
-  if(moves.length===0) return;
-  greySquare(square);
-  for(var i=0;i<moves.length;i++) greySquare(moves[i].to);
-}
-function onMouseoutSquare(square,piece){ removeGreySquares(); }
-
-/* =======================
-   Undo / Redo / Reset / Resign / Draw
-   ======================= */
-$('#undoBtn').on('click',function(){
-  if(gameMode==='local' || !gameActive || isAiThinking) return;
-  var move1=game.undo(); if(!move1) return; redoStack.push(move1);
-  var justMovedColor = move1.color;
-  if(gameMode==='ai' && justMovedColor!==playerColor.charAt(0)){
-    var move2=game.undo(); if(move2) redoStack.push(move2);
-  }
-  board.position(game.fen());
-  updateStatus();
-});
-
-$('#redoBtn').on('click',function(){
-  if(gameMode==='local' || !gameActive || isAiThinking) return;
-  if(redoStack.length===0) return;
-  var move=redoStack.pop();
-  game.move(move);
-  board.position(game.fen());
-  updateStatus();
-});
-
-$('#resetBtn').on('click', function(){
-    if(!gameActive) { initGame(); return; }
-    if(confirm("Reset game?")){
-        initGame();
-    }
-});
-
-$('#resignBtn').on('click', function() {
-    if(!gameActive) return;
-    if(!confirm("Resign?")) return;
-    var loser = (game.turn() === 'w') ? 'White' : 'Black';
-    if(gameMode === 'ai') loser = (playerColor === 'white') ? 'White' : 'Black';
-    var winner = (loser === 'White') ? 'Black' : 'White';
-    if(gameMode === 'online' && currentRoomId) { pushGameEndToRoom(currentRoomId, winner + " won by resignation"); }
-    finishGame(winner + " wins! (" + loser + " resigned)");
-});
-
-$('#drawBtn').on('click', function() {
-    if(!gameActive) return;
-    if(gameMode === 'local') {
-        if(confirm("Offer draw?")) finishGame("Game Drawn (Agreed).");
-    } else if(gameMode === 'online' && currentRoomId) {
-        pushDrawOffer(currentRoomId, (game.turn() === 'w' ? 'white' : 'black'));
-        alert("Draw offer sent.");
-    }
-});
-
-/* =======================
-   Updated Status & Banner Logic
-   ======================= */
+// 10. GAME OVER & OVERLAY
 function updateStatus() {
   let status = '';
   let moveColor = (game.turn() === 'b') ? 'Black' : 'White';
 
   if (game.in_checkmate()) {
     let winner = (moveColor === 'White') ? 'Black' : 'White';
-    status = `CHECKMATE — ${winner} Wins!`;
-
-    gameActive = false;
-    stopTimer();
-    playGameOverSound();
-
-    showEndGameBanner(`${winner} Wins by Checkmate!`, "winText");
-
+    if(gameMode.includes('online')){
+        if(playerColor.charAt(0) === winner.charAt(0).toLowerCase())
+           pushGameEndToRoom(currentRoomId, `${winner} Wins by Checkmate!`);
+    } else {
+        finishGame(`${winner} Wins by Checkmate!`);
+        triggerBoardWinAnimation();
+    }
     return;
   }
 
   if (game.in_draw()) {
-    status = `Game over — Draw`;
-
-    gameActive = false;
-    stopTimer();
-    
-    showEndGameBanner(`Draw — Stalemate`, "drawText");
+    if(gameMode.includes('online')){
+        pushGameEndToRoom(currentRoomId, "Draw (Stalemate)");
+    } else {
+        finishGame("Game Draw (Stalemate)");
+        triggerBoardDrawAnimation();
+    }
     return;
   }
 
-  status = (!timerStarted)
-    ? "Waiting for first move..."
-    : `${moveColor} to move${game.in_check() ? " (CHECK!)" : ""}`;
-
+  status = (!timerStarted) ? "Waiting..." : `${moveColor} to move${game.in_check() ? " (CHECK!)" : ""}`;
   $status.text(status);
 }
 
-function showEndGameBanner(text, styleClass) {
-  let banner = document.getElementById("endGameBanner");
-  
-  banner.innerHTML = text;
-  banner.className = ""; 
-  banner.classList.add("show", styleClass);
-
-  setTimeout(() => {
-    banner.classList.remove("show");
-  }, 6000);
-}
-
-/* =======================
-   Board Animations
-   ======================= */
-function triggerBoardWinAnimation(winner) {
-  let boardElem = document.getElementById("myBoard");
-  boardElem.classList.add("winner-animation");
-  setTimeout(() => {
-    boardElem.classList.remove("winner-animation");
-  }, 4000);
-}
-
-function triggerBoardDrawAnimation() {
-  let boardElem = document.getElementById("myBoard");
-  boardElem.classList.add("draw-animation");
-  setTimeout(() => {
-    boardElem.classList.remove("draw-animation");
-  }, 3000);
-}
-
-/* =======================
-   Game Over Overlay
-   ======================= */
 function finishGame(reasonText) {
     gameActive = false;
     stopTimer();
     $status.text(reasonText);
     playGameOverSound();
-
     showEndGame(reasonText);
-
     $('#analyzeBtn').show();
-    $('#gameActions').hide();
 }
 
 function showEndGame(result) {
     let overlay = document.getElementById("end-game-overlay");
-    
     if (!overlay) {
         overlay = document.createElement('div');
         overlay.id = 'end-game-overlay';
         overlay.className = 'hidden'; 
-        overlay.innerHTML = `<div id="end-game-text" class="message"></div><span>🎉 Congrats!</span>`;
+        overlay.innerHTML = `<div id="end-game-text" class="message"></div><span>🎉 Game Over</span>`;
         document.body.appendChild(overlay);
     }
-
     const textElement = document.getElementById("end-game-text");
     if(textElement) textElement.textContent = result;
-
+    
     overlay.classList.remove('win','lose','draw');
     if (result.toLowerCase().includes('draw')) overlay.classList.add('draw');
     else if (result.toLowerCase().includes(playerColor)) overlay.classList.add('lose');
     else overlay.classList.add('win');
 
-    overlay.style.display = "flex";
-    overlay.style.pointerEvents = "auto"; 
-
     overlay.classList.remove("hidden");
     overlay.classList.add("show");
+    overlay.style.pointerEvents = "auto";
 
     if (!document.getElementById("close-end-screen")) {
         const closeBtn = document.createElement("button");
         closeBtn.id = "close-end-screen";
-        closeBtn.textContent = "✔ Continue / Analysis";
-        closeBtn.style.marginTop = "25px";
-        closeBtn.style.padding = "10px 20px";
-        closeBtn.style.fontSize = "18px";
-        closeBtn.style.borderRadius = "10px";
-        closeBtn.style.cursor = "pointer";
-
+        closeBtn.textContent = "✔ Analysis / Menu";
+        closeBtn.style.marginTop = "20px";
+        closeBtn.style.padding = "10px";
+        closeBtn.style.fontSize = "16px";
         overlay.appendChild(closeBtn);
-
         closeBtn.addEventListener("click", () => {
             overlay.classList.add("hidden");
             overlay.style.pointerEvents = "none"; 
-            initGame(); 
         });
     }
 }
 
-/* =======================
-   Analysis Mode Logic
-   ======================= */
+
+// 11. ANALYSIS MODE
 $('#analyzeBtn').on('click', function() { startAnalysis(); });
 
 function startAnalysis() {
-    const overlay = document.getElementById("end-game-overlay");
-    if(overlay) { overlay.classList.add("hidden"); overlay.style.pointerEvents = "none"; }
-
+    $('#end-game-overlay').addClass("hidden");
     isAnalysis = true; gameActive = false; stopTimer();
     analysisHistory = game.history({ verbose: true });
     analysisIndex = analysisHistory.length - 1;
     $('#gameSettings').hide();
+    $('#inGameControls').hide();
     $('#analysisControls').show();
     $status.text("Analysis Mode");
     ensureEngine();
@@ -442,7 +579,6 @@ function exitAnalysis() {
     isAnalysis = false;
     $('#gameSettings').show();
     $('#analysisControls').hide();
-    initGame();
 }
 
 $('#exitAnalysisBtn').on('click', exitAnalysis);
@@ -457,220 +593,103 @@ function updateAnalysisBoard() {
     board.position(tempGame.fen());
     $status.text("Move: " + (analysisIndex + 1) + " / " + analysisHistory.length);
     removeGreySquares();
-    askEngineEval(tempGame.fen());
-}
-
-function askEngineEval(fen) {
-    if(!engine || !engineReady) return;
-    $('#evalScore').text("..."); $('#bestMove').text("...");
-    engine.postMessage('stop');
-    engine.postMessage('position fen ' + fen);
-    engine.postMessage('go depth 15');
-}
-
-/* =======================
-   Stockfish AI & Engine Handling
-   ======================= */
-async function ensureEngine(){
-  if(engine && engineReady) return;
-  engineReady = false;
-  
-  try {
-    if(typeof STOCKFISH === 'function') engine = STOCKFISH();
-    else {
-        const response = await fetch('https://cdnjs.cloudflare.com/ajax/libs/stockfish.js/10.0.0/stockfish.js');
-        if (!response.ok) throw new Error('Network response was not ok');
-        const scriptContent = await response.text();
-        const blob = new Blob([scriptContent], { type: 'application/javascript' });
-        engine = new Worker(URL.createObjectURL(blob));
+    if(engine) {
+        engine.postMessage('stop');
+        engine.postMessage('position fen ' + tempGame.fen());
+        engine.postMessage('go depth 15');
     }
-  } catch(e) {
-    engine = null; return;
-  }
+}
 
-  engine.onmessage = function(event){
-    var line = typeof event==='string'? event: (event.data||event);
+
+// 12. UTILITIES, HELPERS, AND DEATH MODE
+document.getElementById("difficulty").addEventListener("change", function(){
+  aiDepth = Number(this.value);
+  if(gameMode === 'ai') checkDeathMode(aiDepth);
+});
+
+function checkDeathMode(level) {
+  let warning = document.getElementById("death-warning");
+  if(level === 7){
+    if(warning) warning.style.display = "block";
+    playDeathModeSound();
+    document.body.style.background = "black";
+    document.body.style.color = "red";
+  } else {
+    if(warning) warning.style.display = "none";
+    document.body.style.background = "#212121"; 
+    document.body.style.color = "#eee";
+  }
+}
+
+function removeGreySquares(){ $('#myBoard .square-55d63').css('background',''); }
+function greySquare(square){ var $sq=$('#myBoard .square-'+square); var bg='#a9a9a9'; if($sq.hasClass('black-3c85d')) bg='#696969'; $sq.css('background',bg);}
+function onMouseoverSquare(square,piece){ 
+  if(isAnalysis) return;
+  if(game.game_over() || !gameActive || isAiThinking) return;
+  if(gameMode==='ai'){ var turn = game.turn()==='w'?'white':'black'; if(turn!==playerColor) return;}
+  var moves = game.moves({square:square,verbose:true});
+  if(moves.length===0) return;
+  greySquare(square);
+  for(var i=0;i<moves.length;i++) greySquare(moves[i].to);
+}
+function onMouseoutSquare(square,piece){ removeGreySquares(); }
+
+function triggerBoardWinAnimation() {
+  let boardElem = document.getElementById("myBoard");
+  boardElem.classList.add("winner-animation");
+  setTimeout(() => { boardElem.classList.remove("winner-animation"); }, 4000);
+}
+function triggerBoardDrawAnimation() {
+  let boardElem = document.getElementById("myBoard");
+  boardElem.classList.add("draw-animation");
+  setTimeout(() => { boardElem.classList.remove("draw-animation"); }, 3000);
+}
+
+
+// 13. GAME ACTIONS (Undo, Redo, Resign, Draw)
+$('#undoBtn').on('click',function(){
+  if(gameMode!=='ai' || !gameActive || isAiThinking) return;
+  var m1=game.undo(); if(m1) redoStack.push(m1);
+  var m2=game.undo(); if(m2) redoStack.push(m2);
+  board.position(game.fen());
+  updateStatus();
+});
+
+$('#redoBtn').on('click',function(){
+  if(gameMode!=='ai' || !gameActive || isAiThinking || !redoStack.length) return;
+  game.move(redoStack.pop());
+  game.move(redoStack.pop());
+  board.position(game.fen());
+  updateStatus();
+});
+
+$('#resetBtn').on('click', function(){
+    if(!gameActive) { initGame(); return; }
+    if(confirm("Exit / Reset game?")){ location.reload(); }
+});
+
+$('#resignBtn').on('click', function() {
+    if(!gameActive) return;
+    if(!confirm("Resign?")) return;
     
-    if(line === 'uciok'){ engineReady = true; }
-
-    if(!isAnalysis && line.startsWith("bestmove")){
-      let parts = line.split(' ');
-      let moveStr = parts[1];
-      if(moveStr && moveStr !== '(none)'){
-          game.move({ from: moveStr.substring(0,2), to: moveStr.substring(2,4), promotion:'q' });
-          board.position(game.fen());
-          isAiThinking = false;
-          updateStatus();
-          updateTimerDisplay();
-          playMoveSound();
-      }
+    if(gameMode.includes('online') && currentRoomId) {
+        let winner = (playerColor === 'white') ? 'Black' : 'White';
+        pushGameEndToRoom(currentRoomId, winner + " won by resignation");
+    } else {
+        finishGame("You Resigned.");
     }
-
-    if(isAnalysis && typeof line==='string') {
-        if(line.indexOf('score cp') !== -1 || line.indexOf('score mate') !== -1) {
-            var scoreMatch = line.match(/score cp (-?\d+)/);
-            var mateMatch = line.match(/score mate (-?\d+)/);
-            if(mateMatch) { $('#evalScore').text("Mate in " + mateMatch[1]); } 
-            else if(scoreMatch) { var score = parseInt(scoreMatch[1]) / 100; $('#evalScore').text((score > 0 ? "+" : "") + score.toFixed(2)); }
-        }
-        if(line.indexOf(' pv ') !== -1) {
-             var pvMatch = line.match(/ pv ([a-h][1-8][a-h][1-8])/);
-             if(pvMatch && pvMatch[1]) { 
-                 var bm = pvMatch[1]; 
-                 $('#bestMove').text(bm); 
-                 // Highlight logic...
-             }
-        }
-    }
-  };
-  
-  engine.postMessage("uci");
-}
-function makeAiMove(){
-    if(game.game_over() || !gameActive) return;
-    if(!engine || !engineReady){
-        // fallback random move
-        const moves = game.moves();
-        const move = moves[Math.floor(Math.random()*moves.length)];
-        game.move(move);
-        board.position(game.fen());
-        updateStatus();
-        playMoveSound();
-        return;
-    }
-
-    isAiThinking = true;
-
-    // AI thinking animation
-    const aiStatusElem = document.getElementById("aiStatus");
-    if(aiStatusElem) aiStatusElem.textContent = "AI is thinking";
-    let dotCount = 0;
-    const dotInterval = setInterval(() => {
-        dotCount = (dotCount + 1) % 4;
-        if(aiStatusElem) aiStatusElem.textContent = "AI is thinking" + '.'.repeat(dotCount);
-    }, 500);
-
-    if(!timerStarted) startTimer();
-
-    // AI Level
-    const aiLevel = parseInt($('#difficulty').val());
-
-    // AI settings for fast moves + strong levels
-    const aiSettings = {
-        1: {depth: 6, movetime: 100},
-        2: {depth: 8, movetime: 200},
-        3: {depth: 10, movetime: 300},
-        4: {depth: 12, movetime: 400},
-        5: {depth: 14, movetime: 500},
-        6: {depth: 18, movetime: 1200}, // unbeatable but fast
-        7: {depth: 28, movetime: 2000}  // Mission Impossible (~2s)
-    };
-    const settings = aiSettings[aiLevel] || {depth:10, movetime:300};
-
-    // Send Stockfish commands
-    engine.postMessage('ucinewgame');
-    engine.postMessage('position fen ' + game.fen());
-    if(aiLevel >= 6) engine.postMessage('go movetime ' + settings.movetime);
-    else engine.postMessage('go depth ' + settings.depth);
-
-    // Clear animation once move is applied
-    const originalOnMessage = engine.onmessage;
-    engine.onmessage = function(event){
-        originalOnMessage(event);
-
-        const line = typeof event === 'string'? event : (event.data || event);
-        if(!isAnalysis && line.startsWith("bestmove")){
-            clearInterval(dotInterval);
-            if(aiStatusElem) aiStatusElem.textContent = "";
-            isAiThinking = false;
-        }
-    }
-}
-
-/* =======================
-   Online Sync
-   ======================= */
-function pushMoveToRoom(roomId, fen, san){
-  if(!window.firebase || !window.firebase.database) return;
-  var db = window.firebase.database;
-  var ref = window.firebase.databaseRef;
-  var update = window.firebase.databaseUpdate;
-  update(ref(db, 'rooms/'+roomId), {fen:fen,lastSan:san,timestamp:Date.now()});
-}
-
-function pushGameEndToRoom(roomId, text){
-    if(!window.firebase || !window.firebase.database) return;
-    window.firebase.databaseUpdate(window.firebase.databaseRef(window.firebase.database, 'rooms/'+roomId), {gameResult: text});
-}
-
-function pushDrawOffer(roomId, color){
-    if(!window.firebase || !window.firebase.database) return;
-    window.firebase.databaseUpdate(window.firebase.databaseRef(window.firebase.database, 'rooms/'+roomId), {drawOffer: color});
-}
-
-function subscribeToRoom(roomId){
-  if(!window.firebase || !window.firebase.database) return;
-  var db = window.firebase.database;
-  var ref = window.firebase.databaseRef;
-  var onValue = window.firebase.databaseOnValue;
-  if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
-  
-  var listener=onValue(ref(db, 'rooms/'+roomId), function(snapshot){
-    var val=snapshot.val(); if(!val) return;
-    if(val.fen && val.fen!==game.fen()){ game.load(val.fen); board.position(game.fen()); updateStatus(); }
-    if(val.gameResult && gameActive) { finishGame("Online: " + val.gameResult); }
-    if(val.drawOffer) {
-        var myColor = $('#playerColor').val(); 
-        if(val.drawOffer !== 'accepted' && val.drawOffer !== 'rejected') {
-           if(confirm("Opponent offers a draw. Accept?")) {
-               pushGameEndToRoom(roomId, "Draw agreed");
-               window.firebase.databaseUpdate(ref(db, 'rooms/'+roomId), {drawOffer: 'accepted'});
-           } else {
-               window.firebase.databaseUpdate(ref(db, 'rooms/'+roomId), {drawOffer: 'rejected'});
-           }
-        }
-    }
-  });
-  onlineUnsub=function(){};
-}
-
-$('#joinRoomBtn').on('click',async function(){
-  var pref=$('#roomIdInput').val().trim();
-  if(!window.firebase || !window.firebase.database){ alert('Firebase not configured.'); return; }
-  var db = window.firebase.database; var ref = window.firebase.databaseRef; var set = window.firebase.databaseSet;
-  if(pref){
-    currentRoomId=pref; isHost=false; subscribeToRoom(currentRoomId);
-    alert('Joined room: '+currentRoomId);
-  }else{
-    var id=Math.random().toString(36).slice(2,9);
-    currentRoomId=id; isHost=true;
-    set(ref(db, 'rooms/'+currentRoomId), {fen:game.fen(),created:Date.now()});
-    subscribeToRoom(currentRoomId);
-    alert('Created room: '+currentRoomId+'\nShare this ID.');
-    $('#roomIdInput').val(currentRoomId);
-  }
-  $('#gameMode').val('online'); initGame();
 });
 
-/* =======================
-   Start / Reset
-   ======================= */
-$('#startBtn').on('click',initGame);
-$('#gameMode').on('change',initGame);
+$('#drawBtn').on('click', function() {
+    if(!gameActive) return;
+    if(gameMode.includes('online') && currentRoomId) {
+        pushDrawOffer(currentRoomId, playerColor);
+        alert("Draw offer sent.");
+    }
+});
 
+// Final Bind
 $(document).ready(function(){
-  initGame();
-  setupFirebaseModuleLoader();
+  board = Chessboard('myBoard', 'start');
+  $('#inGameControls').hide();
 });
-
-function setupFirebaseModuleLoader(){
-  var moduleScript=document.createElement('script');
-  moduleScript.type='module';
-  moduleScript.text=`
-    import { initializeApp } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-app.js';
-    import { getDatabase, ref, onValue, set, update } from 'https://www.gstatic.com/firebasejs/9.22.1/firebase-database.js';
-    const firebaseConfig = { apiKey: "YOUR_API_KEY", authDomain: "YOUR_AUTH_DOMAIN", databaseURL: "YOUR_DATABASE_URL", projectId: "YOUR_PROJECT_ID", storageBucket: "YOUR_STORAGE_BUCKET", messagingSenderId: "YOUR_MESSAGING_SENDER_ID", appId: "YOUR_APP_ID" };
-    try { const app = initializeApp(firebaseConfig); const db = getDatabase(app); window.firebase={app:app,database:db,databaseRef:ref,databaseOnValue:onValue,databaseSet:set,databaseUpdate:update}; } catch(e) { console.log("Firebase not configured"); }
-  `;
-  document.body.appendChild(moduleScript);
-}
