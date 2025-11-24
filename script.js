@@ -528,52 +528,65 @@ async function ensureEngine(){
 }
 
 function makeAiMove(){
-  if(game.game_over() || !gameActive){ 
-    isAiThinking=false; 
-    return; 
-  }
-
-  ensureEngine();
-  if(engine && engineReady){
-    engine.postMessage('ucinewgame');
-    engine.postMessage('position fen ' + game.fen());
-
-    var aiDepth = parseInt(document.getElementById("difficulty").value);
-
-    // Difficulty map for normal levels
-    var depthMapping = {
-      1: 6,
-      2: 10,
-      3: 14,
-      4: 18,
-      5: 22,
-      6: 28
-    };
-
-    if(aiDepth === 7){
-      // ⚠️ MISSION IMPOSSIBLE MODE
-      // Ultra-deep Stockfish thinking time.
-      engine.postMessage("go movetime 5000"); // 5 seconds thinking
-    } else {
-      // Normal difficulty levels
-      var depth = depthMapping[aiDepth] || 14;
-      engine.postMessage("go depth " + depth);
-    }
-
-  } else {
-    // Fallback random move (in case Stockfish fails)
-    var moves = game.moves();
-    var move = moves[Math.floor(Math.random() * moves.length)];
+  if(game.game_over() || !gameActive) return;
+  if(!engine || !engineReady){ 
+    // fallback random move
+    const moves = game.moves();
+    const move = moves[Math.floor(Math.random()*moves.length)];
     game.move(move);
     board.position(game.fen());
-    isAiThinking=false;
     updateStatus();
     playMoveSound();
+    return;
+  }
+
+  isAiThinking = true;
+  let statusText = "AI is thinking";
+  let dotCount = 0;
+  const aiStatusElem = document.getElementById("aiStatus");
+  aiStatusElem.textContent = statusText;
+
+  // Animate dots
+  const dotInterval = setInterval(()=>{
+    dotCount = (dotCount + 1) % 4;
+    aiStatusElem.textContent = statusText + '.'.repeat(dotCount);
+  }, 500);
+
+  // Set up AI position
+  engine.postMessage('position fen ' + game.fen());
+
+  let aiLevel = parseInt($('#difficulty').val());
+  const aiSettings = {
+    1: {depth: 4, movetime: 500},
+    2: {depth: 6, movetime: 800},
+    3: {depth: 8, movetime: 1200},
+    4: {depth: 10, movetime: 2000},
+    5: {depth: 12, movetime: 3000},
+    6: {depth: 18, movetime: 3500},
+    7: {depth: 28, movetime: 5000}
+  };
+  const settings = aiSettings[aiLevel] || {depth:8, movetime:1200};
+
+  if(aiLevel === 7 || aiLevel === 6){
+    engine.postMessage('go movetime ' + settings.movetime);
+  } else {
+    engine.postMessage('go depth ' + settings.depth);
   }
 
   if(!timerStarted) startTimer();
-}
 
+  // Stop animation once AI makes move
+  const originalOnMessage = engine.onmessage;
+  engine.onmessage = function(event){
+    originalOnMessage(event);
+
+    let line = typeof event==='string'? event: (event.data||event);
+    if(!line.startsWith("bestmove")) return;
+
+    clearInterval(dotInterval);
+    aiStatusElem.textContent = ""; // clear dots
+  }
+}
 /* =======================
    Online Sync
    ======================= */
