@@ -35,7 +35,7 @@ var timerInterval = null;
 var whiteTime = 600, blackTime = 600;
 var gameActive = false, timerStarted = false;
 var redoStack = [];
-var selectedSquare = null; // New variable for Tap-to-Move
+var selectedSquare = null; // Tracks the square you tapped
 
 // Analysis State
 var isAnalysis = false;
@@ -207,10 +207,9 @@ function initGame(mode, roomId = null, assignedColor = null) {
       subscribeToRoom(currentRoomId);
   }
 }
-/* =========================================================================
-   PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
-   ========================================================================= */
-/* --- TAP TO MOVE FUNCTIONS --- */
+/* =======================
+   TAP-TO-MOVE LOGIC
+   ======================= */
 function highlightSquare(square) {
     var $square = $('#myBoard .square-' + square);
     $square.addClass('highlight-selected');
@@ -222,35 +221,31 @@ function removeHighlights() {
 }
 
 function handleSquareClick(square) {
-    // Safety checks
     if(!gameActive || isAiThinking || isAnalysis) return;
     if(whiteTime <= 0 || blackTime <= 0) return;
 
-    // 1. First Click (Select Piece)
+    // 1. First Click (Select)
     if (!selectedSquare) {
         var piece = game.get(square);
-        // Ensure it is your turn and your piece
         if (!piece || piece.color !== game.turn()) return;
         
-        // Restrictions for AI/Online
+        // Online/AI Restrictions
         if (gameMode === 'ai' && piece.color !== playerColor.charAt(0)) return;
         if (gameMode.includes('online') && piece.color !== playerColor.charAt(0)) return;
-        
+
         selectedSquare = square;
         highlightSquare(square);
         return;
     }
 
-    // 2. Second Click (Move or Change Selection)
-    
-    // FIX: If clicking the same square -> Deselect
-    if (square === selectedSquare) {
+    // 2. Second Click (Action)
+    if (square === selectedSquare) { // Clicked same square -> Deselect
         selectedSquare = null;
         removeHighlights();
         return;
     }
 
-    // FIX: If clicking another own piece -> Change selection
+    // Clicked own piece -> Change selection
     var piece = game.get(square);
     if (piece && piece.color === game.turn()) {
         selectedSquare = square;
@@ -259,35 +254,31 @@ function handleSquareClick(square) {
         return;
     }
 
-    // Try to Move
-    var move = game.move({
-        from: selectedSquare,
-        to: square,
-        promotion: 'q' // Always promote to Queen on tap
-    });
+    // Try Move
+    var move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
 
-    // Invalid Move? Cancel selection
+    // Invalid Move -> Deselect
     if (move === null) {
         selectedSquare = null;
         removeHighlights();
         return;
     }
 
-    // Valid Move! Reset selection and update board
+    // Valid Move Executed
     selectedSquare = null;
     removeHighlights();
     
-    // --- Update Game State (Same as onDrop) ---
     board.position(game.fen());
+    updateStatus(); 
+    updateTimerDisplay();
+    
     if (move.captured) playCaptureSound(); else playMoveSound();
     if (game.in_check()) playCheckSound();
-    
-    updateStatus();
-    updateTimerDisplay();
+
     if (!timerStarted) startTimer();
     redoStack = [];
 
-    // Trigger Online/AI
+    // Trigger AI or Online Sync
     if (gameMode.includes('online') && currentRoomId) pushMoveToRoom(currentRoomId, game.fen(), move.san);
     if (gameMode === 'ai' && !game.game_over()) { 
         isAiThinking = true; 
@@ -295,6 +286,10 @@ function handleSquareClick(square) {
         setTimeout(makeAiMove, 250); 
     }
 }
+
+/* =========================================================================
+   PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
+   ========================================================================= */
 
 // 6. ONLINE MATCHMAKING
 async function initOnlineRandom() {
@@ -814,8 +809,13 @@ $(document).ready(function(){
   
   var config = {
     position: 'start',
-    // This loads your local images
-    pieceTheme: 'assets/pieces/{piece}.png'
+    pieceTheme: 'assets/pieces/{piece}.png', // Ensure this path matches your folder
+    draggable: true,
+    onDragStart: onDragStart,
+    onDrop: onDrop,
+    onSnapEnd: onSnapEnd,
+    onMouseoutSquare: onMouseoutSquare,
+    onMouseoverSquare: onMouseoverSquare
   };
 
   board = Chessboard('myBoard', config);
@@ -828,4 +828,5 @@ $(document).ready(function(){
       handleSquareClick(square);
   });
 });
+
    
