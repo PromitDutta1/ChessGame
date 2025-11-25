@@ -35,6 +35,7 @@ var timerInterval = null;
 var whiteTime = 600, blackTime = 600;
 var gameActive = false, timerStarted = false;
 var redoStack = [];
+var selectedSquare = null; // New variable for Tap-to-Move
 
 // Analysis State
 var isAnalysis = false;
