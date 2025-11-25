@@ -488,7 +488,15 @@ function onDragStart(source,piece){
   if(isAnalysis) return false;
   if(game.game_over() || !gameActive || isAiThinking) return false;
   if(whiteTime<=0 || blackTime<=0) return false;
+  function onDragStart(source, piece) {
+  // ... existing checks ...
   
+  // ADD THIS LINE HERE:
+  if(selectedSquare) { selectedSquare = null; removeHighlights(); } 
+
+  // ... rest of your code ...
+  }
+   
   if(gameMode==='ai'){
     if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
   }
