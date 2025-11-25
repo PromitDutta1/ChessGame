@@ -307,26 +307,29 @@ function handleSquareClick(square) {
    PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
    ========================================================================= */
 
-// 6. ONLINE MATCHMAKING
+// 6. ONLINE MATCHMAKING (Modified for Testing)
 async function initOnlineRandom() {
-    if (!currentUser) { alert("Login required for Ranked Matches."); return; }
+    if (!currentUser) { alert("Login required."); return; }
     $('#findMatchBtn').text("Searching...");
 
+    // Find a waiting room
     const snapshot = await db.ref('rooms').orderByChild('status').equalTo('waiting_random').limitToFirst(1).get();
 
     if (snapshot.exists()) {
         const rid = Object.keys(snapshot.val())[0];
-        if (snapshot.val()[rid].hostUid !== currentUser.uid) {
-             await db.ref('rooms/' + rid).update({
-                status: 'playing',
-                blackPlayer: currentUser.uid,
-                blackName: currentUser.displayName
-            });
-            initGame('online_random', rid, 'black');
-            return;
-        }
+        
+        // --- JOIN EXISTING ROOM ---
+        // (Self-check removed so you can test with 2 tabs)
+        await db.ref('rooms/' + rid).update({
+            status: 'playing',
+            blackPlayer: currentUser.uid,
+            blackName: currentUser.displayName
+        });
+        initGame('online_random', rid, 'black');
+        return;
     }
 
+    // --- CREATE NEW ROOM ---
     const newRid = db.ref('rooms').push().key;
     await db.ref('rooms/' + newRid).set({
         status: 'waiting_random',
@@ -339,6 +342,7 @@ async function initOnlineRandom() {
     initGame('online_random', newRid, 'white');
     $status.text("Searching for opponent...");
 }
+
 
 // FIX: Create/Join Logic + Show Room ID on Side
 async function initOnlineFriend() {
