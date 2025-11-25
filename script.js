@@ -484,27 +484,34 @@ function makeAiMove(){
 
 
 // 8. MOVE HANDLERS
-function onDragStart(source,piece){
-  if(isAnalysis) return false;
-  if(game.game_over() || !gameActive || isAiThinking) return false;
-  if(whiteTime<=0 || blackTime<=0) return false;
-  function onDragStart(source, piece) {
-  // ... existing checks ...
-  
-  // ADD THIS LINE HERE:
-  if(selectedSquare) { selectedSquare = null; removeHighlights(); } 
+function onDragStart(source, piece) {
+  // 1. Basic Safety Checks
+  if (isAnalysis) return false;
+  if (game.game_over() || !gameActive || isAiThinking) return false;
+  if (whiteTime <= 0 || blackTime <= 0) return false;
 
-  // ... rest of your code ...
+  // 2. HYBRID LOGIC: Cancel Tap Selection if Dragging starts
+  // This makes "Tap" and "Drag" work perfectly together.
+  if (selectedSquare) { 
+      selectedSquare = null; 
+      removeHighlights(); 
   }
-   
-  if(gameMode==='ai'){
-    if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
+
+  // 3. AI Mode Restrictions
+  if (gameMode === 'ai') {
+    if ((playerColor === 'white' && piece.search(/^b/) !== -1) || 
+        (playerColor === 'black' && piece.search(/^w/) !== -1)) {
+        return false;
+    }
   }
-  
-  if(gameMode.includes('online')) {
-      if(playerColor === 'white' && game.turn() === 'b') return false;
-      if(playerColor === 'black' && game.turn() === 'w') return false;
-      if($status.text().includes("Searching")) return false;
+
+  // 4. Online Mode Restrictions
+  if (gameMode.includes('online')) {
+      if ((playerColor === 'white' && game.turn() === 'b') || 
+          (playerColor === 'black' && game.turn() === 'w')) {
+          return false;
+      }
+      if ($status.text().includes("Searching")) return false;
   }
 }
 
