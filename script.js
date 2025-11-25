@@ -872,6 +872,45 @@ $('#drawBtn').on('click', function() {
         alert("Draw offer sent.");
     }
 });
+// --- HANDLE LEAVING / DISCONNECTING ---
+
+// 1. Main Menu Button Logic
+$('#resetBtn').on('click', function(){
+    // If game is just starting or already over, just reload
+    if(!gameActive) { 
+        if(confirm("Return to Main Menu?")) location.reload();
+        return; 
+    }
+
+    // If playing ONLINE, this counts as RESIGNATION
+    if(gameMode.includes('online') && currentRoomId) {
+        if(!confirm("⚠️ Warning: Leaving now will resign the game. Are you sure?")) return;
+        
+        let winner = (playerColor === 'white') ? 'Black' : 'White';
+        pushGameEndToRoom(currentRoomId, `${winner} Won (Opponent Left)`);
+        
+        // Small delay to ensure the message reaches Firebase before reloading
+        setTimeout(() => location.reload(), 300);
+    } 
+    // If playing AI/Local, just exit
+    else {
+        if(confirm("Exit current game?")) location.reload();
+    }
+});
+
+// 2. Browser Close / Refresh / Back Button Logic
+window.addEventListener('beforeunload', function (e) {
+    // Only trigger if game is active and online
+    if (gameMode.includes('online') && gameActive && currentRoomId) {
+        // Attempt to send resign signal before connection closes
+        let winner = (playerColor === 'white') ? 'Black' : 'White';
+        pushGameEndToRoom(currentRoomId, `${winner} Won (Opponent Disconnected)`);
+        
+        // Standard browser confirmation dialog
+        e.preventDefault();
+        e.returnValue = ''; 
+    }
+});
 
 // Final Bind
 $(document).ready(function(){
