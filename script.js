@@ -1,5 +1,5 @@
 /* =========================================================================
-   PART 1: CONFIG, AUTH, AND SOUND ENGINE
+   PART 1: CONFIG, AUTH, SOUND, AND GLOBAL VARS
    ========================================================================= */
 
 // 1. FIREBASE INITIALIZATION
@@ -14,6 +14,7 @@ const firebaseConfig = {
   databaseURL: "https://procheeser-824bf-default-rtdb.firebaseio.com/"
 };
 
+// Initialize Firebase
 if (!firebase.apps.length) {
     firebase.initializeApp(firebaseConfig);
 }
@@ -26,7 +27,7 @@ var board = null;
 var game = new Chess();
 var $status = $('#statusText');
 
-var gameMode = 'ai'; // 'ai', 'local', 'online_friend', 'online_random'
+var gameMode = 'ai'; 
 var aiDepth = 3;
 var playerColor = 'white';
 var isAiThinking = false;
@@ -35,7 +36,7 @@ var timerInterval = null;
 var whiteTime = 600, blackTime = 600;
 var gameActive = false, timerStarted = false;
 var redoStack = [];
-var selectedSquare = null; // Tracks the square you tapped
+var selectedSquare = null; 
 
 // Analysis State
 var isAnalysis = false;
@@ -57,14 +58,23 @@ function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
 }
 
-// 3. AUTHENTICATION HANDLERS
+// 3. AUTHENTICATION HANDLERS (Fixed with Error Logging)
 $('#loginBtn').on('click', () => {
-    auth.signInWithPopup(provider).catch(e => alert(e.message));
+    console.log("Attempting login...");
+    auth.signInWithPopup(provider)
+        .then((result) => {
+            console.log("Login Success:", result.user.displayName);
+        })
+        .catch((error) => {
+            console.error("Login Error:", error);
+            alert("Login Failed: " + error.message);
+        });
 });
 
 $('#logoutBtn').on('click', () => {
-    auth.signOut();
-    location.reload();
+    auth.signOut().then(() => {
+        location.reload();
+    });
 });
 
 auth.onAuthStateChanged(user => {
@@ -75,14 +85,16 @@ auth.onAuthStateChanged(user => {
         $('#userName').text(user.displayName.split(' ')[0]);
         $('#userAvatar').attr('src', user.photoURL);
         $('#bottomPlayerLabel').text(user.displayName);
+        console.log("User is signed in:", user.displayName);
     } else {
         $('#authContainer').show();
         $('#userInfo').hide();
         $('#bottomPlayerLabel').text("You (Guest)");
+        console.log("User is signed out");
     }
 });
 
-// 4. SOUND ENGINE (Original Preserved)
+// 4. SOUND ENGINE
 function beep(freq,dur,when=0){
   ensureAudio();
   var o=audioCtx.createOscillator();
@@ -142,9 +154,8 @@ function initGame(mode, roomId = null, assignedColor = null) {
   gameMode = mode || 'ai';
   currentRoomId = roomId;
   
-  // Settings
   aiDepth = parseInt($('#difficulty').val()) || 3;
-  checkDeathMode(aiDepth); // Original Visuals
+  checkDeathMode(aiDepth);
 
   if(gameMode === 'ai') {
       playerColor = $('#aiColor').val();
@@ -160,14 +171,12 @@ function initGame(mode, roomId = null, assignedColor = null) {
   gameActive = true;
   updateTimerDisplay();
   
-  // UI States
   $('#analyzeBtn').hide();
   $('#gameSettings').hide();
   $('#inGameControls').show();
   
-  // ADD THIS LINE HERE:
   if(mode !== 'online_friend') $('#roomDisplay').hide();
-   
+  
   if(gameMode === 'local'){ 
       $('#undoRedoControls').hide(); 
       $('#drawBtn').hide(); 
@@ -185,12 +194,15 @@ function initGame(mode, roomId = null, assignedColor = null) {
   redoStack = [];
   isAiThinking = false;
   isAnalysis = false;
+  
+  selectedSquare = null;
+  removeHighlights();
 
   var config = {
     draggable: true,
     position: 'start',
     orientation: playerColor,
-    pieceTheme: 'https://chessboardjs.com/img/chesspieces/wikipedia/{piece}.png', 
+    pieceTheme: 'assets/pieces/{piece}.png', 
     onDragStart: onDragStart,
     onDrop: onDrop,
     onMouseoutSquare: onMouseoutSquare,
@@ -210,6 +222,7 @@ function initGame(mode, roomId = null, assignedColor = null) {
       subscribeToRoom(currentRoomId);
   }
 }
+  
 /* =======================
    TAP-TO-MOVE LOGIC
    ======================= */
