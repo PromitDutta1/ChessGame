@@ -808,11 +808,19 @@ $(document).ready(function(){
   
   var config = {
     position: 'start',
-    // This tells the board to look in your local folder
+    // This loads your local images
     pieceTheme: 'assets/pieces/{piece}.png'
   };
 
   board = Chessboard('myBoard', config);
   $('#inGameControls').hide();
+
+  // --- BIND TAP EVENT ---
+  // This enables the clicking on squares
+  $('#myBoard').on('click', '.square-55d63', function() {
+      var square = $(this).attr('data-square');
+      handleSquareClick(square);
+  });
 });
+
 
