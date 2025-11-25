@@ -165,6 +165,9 @@ function initGame(mode, roomId = null, assignedColor = null) {
   $('#gameSettings').hide();
   $('#inGameControls').show();
   
+  // ADD THIS LINE HERE:
+  if(mode !== 'online_friend') $('#roomDisplay').hide();
+   
   if(gameMode === 'local'){ 
       $('#undoRedoControls').hide(); 
       $('#drawBtn').hide(); 
@@ -324,16 +327,22 @@ async function initOnlineRandom() {
     $status.text("Searching for opponent...");
 }
 
+// FIX: Create/Join Logic + Show Room ID on Side
 async function initOnlineFriend() {
     let roomId = $('#roomIdInput').val().trim();
     let chosenColor = $('#friendColor').val();
 
+    // --- CREATE ROOM (If Input is Empty) ---
     if (!roomId) {
+        // 1. Generate ID
         roomId = Math.random().toString(36).substring(2, 8).toUpperCase();
-        let hostColor = 'white';
-        if(chosenColor === 'black') hostColor = 'black';
-        else if(chosenColor === 'random') hostColor = Math.random() < 0.5 ? 'white' : 'black';
         
+        // 2. Determine Host Color
+        let hostColor = 'white';
+        if (chosenColor === 'black') hostColor = 'black';
+        else if (chosenColor === 'random') hostColor = Math.random() < 0.5 ? 'white' : 'black';
+        
+        // 3. Save to Firebase
         await db.ref('rooms/' + roomId).set({
             fen: 'start',
             status: 'waiting',
@@ -342,19 +351,40 @@ async function initOnlineFriend() {
             blackPlayer: (hostColor === 'black' ? (currentUser ? currentUser.uid : 'GuestHost') : null),
             created: firebase.database.ServerValue.TIMESTAMP
         });
-        $('#roomIdInput').val(roomId);
-        alert(`Room Created: ${roomId}`);
-        initGame('online_friend', roomId, hostColor);
-    } else {
-        const snap = await db.ref('rooms/' + roomId).get();
-        if(!snap.exists()) { alert("Room not found!"); return; }
         
-        const val = snap.val();
-        let myColor = (val.whitePlayer) ? 'black' : 'white';
-        await db.ref('rooms/' + roomId).update({ status: 'playing' });
+        // 4. UI UPDATES (Show ID in Sidebar)
+        $('#roomIdInput').val(roomId); 
+        $('#roomCodeText').text(roomId); // <--- Updates the blue box text
+        $('#roomDisplay').show();        // <--- Makes the blue box visible
+        
+        alert("Room Created! Code: " + roomId);
+        initGame('online_friend', roomId, hostColor);
+    } 
+    
+    // --- JOIN ROOM (If Input has Text) ---
+    else {
+        const snapshot = await db.ref('rooms/' + roomId).get();
+        if (!snapshot.exists()) { alert("Error: Room ID not found!"); return; }
+        
+        const roomData = snapshot.val();
+        if (roomData.status === 'playing') { alert("Error: Game already in progress!"); return; }
+
+        let myColor = (roomData.hostColor === 'white') ? 'black' : 'white';
+        
+        let updates = { status: 'playing' };
+        if (myColor === 'white') updates.whitePlayer = (currentUser ? currentUser.uid : 'GuestJoiner');
+        else updates.blackPlayer = (currentUser ? currentUser.uid : 'GuestJoiner');
+        
+        await db.ref('rooms/' + roomId).update(updates);
+        
+        // UI UPDATES (Show ID in Sidebar)
+        $('#roomCodeText').text(roomId); // <--- Updates the blue box text
+        $('#roomDisplay').show();        // <--- Makes the blue box visible
+        
         initGame('online_friend', roomId, myColor);
     }
 }
+
 
 function subscribeToRoom(roomId){
   if(onlineUnsub){ onlineUnsub(); onlineUnsub=null; }
