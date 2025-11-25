@@ -210,6 +210,84 @@ function initGame(mode, roomId = null, assignedColor = null) {
 /* =========================================================================
    PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
    ========================================================================= */
+/* --- TAP TO MOVE FUNCTIONS --- */
+function highlightSquare(square) {
+    var $square = $('#myBoard .square-' + square);
+    $square.addClass('highlight-selected');
+}
+
+function removeHighlights() {
+    $('#myBoard .square-55d63').removeClass('highlight-selected');
+    $('#myBoard .square-55d63').css('background', '');
+}
+
+function handleSquareClick(square) {
+    // Safety checks
+    if(!gameActive || isAiThinking || isAnalysis) return;
+    if(whiteTime <= 0 || blackTime <= 0) return;
+
+    // 1. First Click (Select Piece)
+    if (!selectedSquare) {
+        var piece = game.get(square);
+        // Ensure it is your turn and your piece
+        if (!piece || piece.color !== game.turn()) return;
+        
+        // Restrictions for AI/Online
+        if (gameMode === 'ai' && piece.color !== playerColor.charAt(0)) return;
+        if (gameMode.includes('online') && piece.color !== playerColor.charAt(0)) return;
+        
+        selectedSquare = square;
+        highlightSquare(square);
+        return;
+    }
+
+    // 2. Second Click (Move or Change Selection)
+    var piece = game.get(square);
+    
+    // If clicking same square or another own piece -> Change selection
+    if (square === selectedSquare || (piece && piece.color === game.turn())) {
+        selectedSquare = square;
+        removeHighlights();
+        highlightSquare(square);
+        return;
+    }
+
+    // Try to Move
+    var move = game.move({
+        from: selectedSquare,
+        to: square,
+        promotion: 'q' // Always promote to Queen on tap
+    });
+
+    // Invalid Move? Cancel selection
+    if (move === null) {
+        selectedSquare = null;
+        removeHighlights();
+        return;
+    }
+
+    // Valid Move! Reset selection and update board
+    selectedSquare = null;
+    removeHighlights();
+    
+    // --- Update Game State (Same as onDrop) ---
+    board.position(game.fen());
+    if (move.captured) playCaptureSound(); else playMoveSound();
+    if (game.in_check()) playCheckSound();
+    
+    updateStatus();
+    updateTimerDisplay();
+    if (!timerStarted) startTimer();
+    redoStack = [];
+
+    // Trigger Online/AI
+    if (gameMode.includes('online') && currentRoomId) pushMoveToRoom(currentRoomId, game.fen(), move.san);
+    if (gameMode === 'ai' && !game.game_over()) { 
+        isAiThinking = true; 
+        $status.text("AI is thinking..."); 
+        setTimeout(makeAiMove, 250); 
+    }
+}
 
 // 6. ONLINE MATCHMAKING
 async function initOnlineRandom() {
