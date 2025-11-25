@@ -1,5 +1,5 @@
 /* =========================================================================
-   PART 1: CONFIG, AUTH, AND SOUND ENGINE
+   PART 1: CONFIG, AUTH, SOUND, AND GLOBAL VARS
    ========================================================================= */
 
 // 1. FIREBASE INITIALIZATION
@@ -242,10 +242,17 @@ function handleSquareClick(square) {
     }
 
     // 2. Second Click (Move or Change Selection)
-    var piece = game.get(square);
     
-    // If clicking same square or another own piece -> Change selection
-    if (square === selectedSquare || (piece && piece.color === game.turn())) {
+    // FIX: If clicking the exact same square -> Deselect
+    if (square === selectedSquare) {
+        selectedSquare = null;
+        removeHighlights();
+        return;
+    }
+
+    // FIX: If clicking another one of own pieces -> Change Selection
+    var piece = game.get(square);
+    if (piece && piece.color === game.turn()) {
         selectedSquare = square;
         removeHighlights();
         highlightSquare(square);
@@ -481,41 +488,30 @@ function makeAiMove(){
     if(aiDepth >= 6) engine.postMessage('go movetime ' + settings.movetime);
     else engine.postMessage('go depth ' + settings.depth);
 }
+/* =========================================================================
+   PART 3: UI ACTIONS, ANALYSIS, AND GAME OVER OVERLAY
+   ========================================================================= */
 
+// 8. MOVE HANDLERS (Drag & Drop)
+function onDragStart(source, piece){
+  if(isAnalysis || game.game_over() || !gameActive || isAiThinking) return false;
+  if(whiteTime<=0 || blackTime<=0) return false;
+  
+  // FIX: Cancel Tap Selection if dragging starts
+  if(selectedSquare) { selectedSquare = null; removeHighlights(); } 
 
-// 8. MOVE HANDLERS
-function onDragStart(source, piece) {
-  // 1. Basic Safety Checks
-  if (isAnalysis) return false;
-  if (game.game_over() || !gameActive || isAiThinking) return false;
-  if (whiteTime <= 0 || blackTime <= 0) return false;
-
-  // 2. HYBRID LOGIC: Cancel Tap Selection if Dragging starts
-  // This makes "Tap" and "Drag" work perfectly together.
-  if (selectedSquare) { 
-      selectedSquare = null; 
-      removeHighlights(); 
+  if(gameMode==='ai'){
+    if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
   }
-
-  // 3. AI Mode Restrictions
-  if (gameMode === 'ai') {
-    if ((playerColor === 'white' && piece.search(/^b/) !== -1) || 
-        (playerColor === 'black' && piece.search(/^w/) !== -1)) {
-        return false;
-    }
-  }
-
-  // 4. Online Mode Restrictions
-  if (gameMode.includes('online')) {
-      if ((playerColor === 'white' && game.turn() === 'b') || 
-          (playerColor === 'black' && game.turn() === 'w')) {
-          return false;
-      }
-      if ($status.text().includes("Searching")) return false;
+  
+  if(gameMode.includes('online')) {
+      if(playerColor === 'white' && game.turn() === 'b') return false;
+      if(playerColor === 'black' && game.turn() === 'w') return false;
+      if($status.text().includes("Searching")) return false;
   }
 }
 
-function onDrop(source,target){
+function onDrop(source, target){
   var move=game.move({from:source,to:target,promotion:'q'});
   if(move===null) return 'snapback';
   
@@ -524,7 +520,7 @@ function onDrop(source,target){
   
   redoStack=[];
   if(!timerStarted) startTimer();
-  updateStatus();
+  updateStatus(); 
   updateTimerDisplay();
   board.position(game.fen());
 
@@ -532,16 +528,13 @@ function onDrop(source,target){
       pushMoveToRoom(currentRoomId, game.fen(), move.san); 
   }
 
-  if(gameMode==='ai' && !game.game_over()){ 
-      isAiThinking=true; 
+  if(gameMode === 'ai' && !game.game_over()) { 
+      isAiThinking = true; 
       $status.text("AI is thinking..."); 
-      setTimeout(makeAiMove,120); 
+      setTimeout(makeAiMove, 250); 
   }
 }
 function onSnapEnd(){ board.position(game.fen()); }
-/* =========================================================================
-   PART 3: UI ACTIONS, ANALYSIS, AND GAME OVER OVERLAY
-   ========================================================================= */
 
 // 9. TIMER LOGIC
 function startTimer(){
@@ -618,7 +611,6 @@ function finishGame(reasonText) {
 
 /* =======================
    UPDATED: showEndGame Function
-   (Replaces the old one to add "Main Menu" button)
    ======================= */
 function showEndGame(result) {
     let overlay = document.getElementById("end-game-overlay");
@@ -803,24 +795,20 @@ $('#drawBtn').on('click', function() {
     }
 });
 
-// Final Bind
+// Final Bind (Cleaned & Fixed)
 $(document).ready(function(){
   
   var config = {
     position: 'start',
-    // This loads your local images
     pieceTheme: 'assets/pieces/{piece}.png'
   };
 
   board = Chessboard('myBoard', config);
   $('#inGameControls').hide();
 
-  // --- BIND TAP EVENT ---
-  // This enables the clicking on squares
+  // --- BIND TAP EVENT (Fixed Logic) ---
   $('#myBoard').on('click', '.square-55d63', function() {
       var square = $(this).attr('data-square');
       handleSquareClick(square);
   });
 });
-
-
