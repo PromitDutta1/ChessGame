@@ -35,6 +35,7 @@ var timerInterval = null;
 var whiteTime = 600, blackTime = 600;
 var gameActive = false, timerStarted = false;
 var redoStack = [];
+var selectedSquare = null; // New variable for Tap-to-Move
 
 // Analysis State
 var isAnalysis = false;
@@ -209,6 +210,91 @@ function initGame(mode, roomId = null, assignedColor = null) {
 /* =========================================================================
    PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
    ========================================================================= */
+/* --- TAP TO MOVE FUNCTIONS --- */
+function highlightSquare(square) {
+    var $square = $('#myBoard .square-' + square);
+    $square.addClass('highlight-selected');
+}
+
+function removeHighlights() {
+    $('#myBoard .square-55d63').removeClass('highlight-selected');
+    $('#myBoard .square-55d63').css('background', '');
+}
+
+function handleSquareClick(square) {
+    // Safety checks
+    if(!gameActive || isAiThinking || isAnalysis) return;
+    if(whiteTime <= 0 || blackTime <= 0) return;
+
+    // 1. First Click (Select Piece)
+    if (!selectedSquare) {
+        var piece = game.get(square);
+        // Ensure it is your turn and your piece
+        if (!piece || piece.color !== game.turn()) return;
+        
+        // Restrictions for AI/Online
+        if (gameMode === 'ai' && piece.color !== playerColor.charAt(0)) return;
+        if (gameMode.includes('online') && piece.color !== playerColor.charAt(0)) return;
+        
+        selectedSquare = square;
+        highlightSquare(square);
+        return;
+    }
+
+    // 2. Second Click (Move or Change Selection)
+    
+    // FIX: If clicking the same square -> Deselect
+    if (square === selectedSquare) {
+        selectedSquare = null;
+        removeHighlights();
+        return;
+    }
+
+    // FIX: If clicking another own piece -> Change selection
+    var piece = game.get(square);
+    if (piece && piece.color === game.turn()) {
+        selectedSquare = square;
+        removeHighlights();
+        highlightSquare(square);
+        return;
+    }
+
+    // Try to Move
+    var move = game.move({
+        from: selectedSquare,
+        to: square,
+        promotion: 'q' // Always promote to Queen on tap
+    });
+
+    // Invalid Move? Cancel selection
+    if (move === null) {
+        selectedSquare = null;
+        removeHighlights();
+        return;
+    }
+
+    // Valid Move! Reset selection and update board
+    selectedSquare = null;
+    removeHighlights();
+    
+    // --- Update Game State (Same as onDrop) ---
+    board.position(game.fen());
+    if (move.captured) playCaptureSound(); else playMoveSound();
+    if (game.in_check()) playCheckSound();
+    
+    updateStatus();
+    updateTimerDisplay();
+    if (!timerStarted) startTimer();
+    redoStack = [];
+
+    // Trigger Online/AI
+    if (gameMode.includes('online') && currentRoomId) pushMoveToRoom(currentRoomId, game.fen(), move.san);
+    if (gameMode === 'ai' && !game.game_over()) { 
+        isAiThinking = true; 
+        $status.text("AI is thinking..."); 
+        setTimeout(makeAiMove, 250); 
+    }
+}
 
 // 6. ONLINE MATCHMAKING
 async function initOnlineRandom() {
@@ -405,19 +491,33 @@ function makeAiMove(){
 
 
 // 8. MOVE HANDLERS
-function onDragStart(source,piece){
-  if(isAnalysis) return false;
-  if(game.game_over() || !gameActive || isAiThinking) return false;
-  if(whiteTime<=0 || blackTime<=0) return false;
-  
-  if(gameMode==='ai'){
-    if((playerColor==='white' && piece.search(/^b/)!==-1) || (playerColor==='black' && piece.search(/^w/)!==-1)) return false;
+function onDragStart(source, piece) {
+  // 1. Basic Safety Checks
+  if (isAnalysis) return false;
+  if (game.game_over() || !gameActive || isAiThinking) return false;
+  if (whiteTime <= 0 || blackTime <= 0) return false;
+
+  // 2. HYBRID LOGIC: Cancel Tap Selection if Dragging starts
+  if (selectedSquare) { 
+      selectedSquare = null; 
+      removeHighlights(); 
   }
-  
-  if(gameMode.includes('online')) {
-      if(playerColor === 'white' && game.turn() === 'b') return false;
-      if(playerColor === 'black' && game.turn() === 'w') return false;
-      if($status.text().includes("Searching")) return false;
+
+  // 3. AI Mode Restrictions
+  if (gameMode === 'ai') {
+    if ((playerColor === 'white' && piece.search(/^b/) !== -1) || 
+        (playerColor === 'black' && piece.search(/^w/) !== -1)) {
+        return false;
+    }
+  }
+
+  // 4. Online Mode Restrictions
+  if (gameMode.includes('online')) {
+      if ((playerColor === 'white' && game.turn() === 'b') || 
+          (playerColor === 'black' && game.turn() === 'w')) {
+          return false;
+      }
+      if ($status.text().includes("Searching")) return false;
   }
 }
 
@@ -714,11 +814,18 @@ $(document).ready(function(){
   
   var config = {
     position: 'start',
-    // This tells the board to look in your local folder
+    // This loads your local images
     pieceTheme: 'assets/pieces/{piece}.png'
   };
 
   board = Chessboard('myBoard', config);
   $('#inGameControls').hide();
-});
 
+  // --- BIND TAP EVENT ---
+  // This enables the clicking on squares
+  $('#myBoard').on('click', '.square-55d63', function() {
+      var square = $(this).attr('data-square');
+      handleSquareClick(square);
+  });
+});
+   
