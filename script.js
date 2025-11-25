@@ -307,29 +307,49 @@ function handleSquareClick(square) {
    PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
    ========================================================================= */
 
-// 6. ONLINE MATCHMAKING (Modified for Testing)
+// 6. ONLINE MATCHMAKING (Improved)
 async function initOnlineRandom() {
     if (!currentUser) { alert("Login required."); return; }
-    $('#findMatchBtn').text("Searching...");
+    
+    $('#findMatchBtn').text("Searching...").prop('disabled', true); // Disable button to prevent double-click
 
-    // Find a waiting room
+    // 1. Check if *I* am already waiting in a room (Prevent duplicate rooms)
+    const myRooms = await db.ref('rooms').orderByChild('hostUid').equalTo(currentUser.uid).get();
+    if (myRooms.exists()) {
+        // If I have a room that is 'waiting_random', just rejoin it
+        let existingId = null;
+        myRooms.forEach(child => {
+            if (child.val().status === 'waiting_random') existingId = child.key;
+        });
+        
+        if (existingId) {
+            alert("You are already searching! Rejoining your room...");
+            initGame('online_random', existingId, 'white');
+            $status.text("Waiting for opponent...");
+            return;
+        }
+    }
+
+    // 2. Search for an existing opponent
     const snapshot = await db.ref('rooms').orderByChild('status').equalTo('waiting_random').limitToFirst(1).get();
 
     if (snapshot.exists()) {
         const rid = Object.keys(snapshot.val())[0];
-        
-        // --- JOIN EXISTING ROOM ---
-        // (Self-check removed so you can test with 2 tabs)
-        await db.ref('rooms/' + rid).update({
-            status: 'playing',
-            blackPlayer: currentUser.uid,
-            blackName: currentUser.displayName
-        });
-        initGame('online_random', rid, 'black');
-        return;
+        const room = snapshot.val()[rid];
+
+        // Ensure I am not playing against myself
+        if (room.hostUid !== currentUser.uid) {
+             await db.ref('rooms/' + rid).update({
+                status: 'playing',
+                blackPlayer: currentUser.uid,
+                blackName: currentUser.displayName
+            });
+            initGame('online_random', rid, 'black');
+            return;
+        }
     }
 
-    // --- CREATE NEW ROOM ---
+    // 3. Create new room if no match found
     const newRid = db.ref('rooms').push().key;
     await db.ref('rooms/' + newRid).set({
         status: 'waiting_random',
@@ -339,9 +359,11 @@ async function initOnlineRandom() {
         fen: 'start',
         created: firebase.database.ServerValue.TIMESTAMP
     });
+    
     initGame('online_random', newRid, 'white');
     $status.text("Searching for opponent...");
 }
+
 
 
 // FIX: Create/Join Logic + Show Room ID on Side
