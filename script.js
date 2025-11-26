@@ -647,35 +647,52 @@ function updateTimerDisplay(){
 
 
 // 10. GAME OVER & OVERLAY
+// 10. UPDATED STATUS (Fixes Online Checkmate)
 function updateStatus() {
   let status = '';
   let moveColor = (game.turn() === 'b') ? 'Black' : 'White';
 
+  // --- CHECKMATE LOGIC ---
   if (game.in_checkmate()) {
-    let winner = (moveColor === 'White') ? 'Black' : 'White';
+    let winner = (moveColor === 'White') ? 'Black' : 'White'; // The side that just moved is the winner
+    
     if(gameMode.includes('online')){
-        if(playerColor.charAt(0) === winner.charAt(0).toLowerCase())
+        // 1. If I am the winner, tell the database
+        if(playerColor.charAt(0) === winner.charAt(0).toLowerCase()){
            pushGameEndToRoom(currentRoomId, `${winner} Wins by Checkmate!`);
-    } else {
+        }
+        
+        // 2. End the game locally IMMEDIATELY (Don't wait for server echo)
         finishGame(`${winner} Wins by Checkmate!`);
         triggerBoardWinAnimation();
+    } 
+    else {
+        // AI / Local Mode
+        finishGame(`${winner} Wins by Checkmate!`);
+        triggerBoardWinAnimation();
+        showEndGame(`${winner} Wins!`); 
     }
     return;
   }
 
+  // --- DRAW LOGIC ---
   if (game.in_draw()) {
     if(gameMode.includes('online')){
         pushGameEndToRoom(currentRoomId, "Draw (Stalemate)");
+        finishGame("Game Draw (Stalemate)"); // End locally
     } else {
         finishGame("Game Draw (Stalemate)");
         triggerBoardDrawAnimation();
+        showEndGame("Draw");
     }
     return;
   }
 
+  // --- GAME CONTINUES ---
   status = (!timerStarted) ? "Waiting..." : `${moveColor} to move${game.in_check() ? " (CHECK!)" : ""}`;
   $status.text(status);
 }
+
 
 function finishGame(reasonText) {
     gameActive = false;
