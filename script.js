@@ -235,7 +235,6 @@ function removeHighlights() {
     $('#myBoard .square-55d63').removeClass('highlight-selected');
     $('#myBoard .square-55d63').css('background', '');
 }
-
 function handleSquareClick(square) {
     if(!gameActive || isAiThinking || isAnalysis) return;
     if(whiteTime <= 0 || blackTime <= 0) return;
@@ -245,9 +244,10 @@ function handleSquareClick(square) {
         var piece = game.get(square);
         if (!piece || piece.color !== game.turn()) return;
         
-        // Online/AI Restrictions
+        // Restrictions
         if (gameMode === 'ai' && piece.color !== playerColor.charAt(0)) return;
         if (gameMode.includes('online') && piece.color !== playerColor.charAt(0)) return;
+        if (gameMode.includes('online') && $status.text().includes("Searching")) return;
 
         selectedSquare = square;
         highlightSquare(square);
@@ -255,53 +255,47 @@ function handleSquareClick(square) {
     }
 
     // 2. Second Click (Action)
-    if (square === selectedSquare) { // Clicked same square -> Deselect
-        selectedSquare = null;
-        removeHighlights();
-        return;
-    }
-
-    // Clicked own piece -> Change selection
+    if (square === selectedSquare) { selectedSquare = null; removeHighlights(); return; }
+    
     var piece = game.get(square);
     if (piece && piece.color === game.turn()) {
-        selectedSquare = square;
-        removeHighlights();
-        highlightSquare(square);
-        return;
+        selectedSquare = square; removeHighlights(); highlightSquare(square); return;
     }
 
     // Try Move
     var move = game.move({ from: selectedSquare, to: square, promotion: 'q' });
 
-    // Invalid Move -> Deselect
-    if (move === null) {
-        selectedSquare = null;
-        removeHighlights();
-        return;
-    }
+    if (move === null) { selectedSquare = null; removeHighlights(); return; }
 
-    // Valid Move Executed
+    // --- VALID MOVE EXECUTION ---
     selectedSquare = null;
     removeHighlights();
     
+    // 1. UPDATE VISUALS
     board.position(game.fen());
-    updateStatus(); 
-    updateTimerDisplay();
-    
     if (move.captured) playCaptureSound(); else playMoveSound();
     if (game.in_check()) playCheckSound();
 
+    // 2. SEND TO SERVER (Crucial: Do this BEFORE ending the game)
+    if (gameMode.includes('online') && currentRoomId) {
+        pushMoveToRoom(currentRoomId, game.fen(), move.san);
+    }
+
+    // 3. UPDATE STATUS (Checkmate/Game Over happens here)
     if (!timerStarted) startTimer();
     redoStack = [];
+    
+    updateStatus(); 
+    updateTimerDisplay();
 
-    // Trigger AI or Online Sync
-    if (gameMode.includes('online') && currentRoomId) pushMoveToRoom(currentRoomId, game.fen(), move.san);
+    // 4. AI RESPONSE
     if (gameMode === 'ai' && !game.game_over()) { 
         isAiThinking = true; 
         $status.text("AI is thinking..."); 
         setTimeout(makeAiMove, 250); 
     }
 }
+
 
 /* =========================================================================
    PART 2: ONLINE MATCHMAKING, AI LOGIC, AND GAME LOOP
