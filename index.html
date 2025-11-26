@@ -8,11 +8,25 @@
 <link rel="stylesheet" href="https://unpkg.com/@chrisoakman/chessboardjs@1.0.0/dist/chessboard-1.0.0.min.css">
 <link rel="stylesheet" href="style.css">
 
+<style>
+  #gameLogo {
+    display: block;
+    margin: 20px auto 10px auto; /* Center align with top margin */
+    width: 180px;                /* Good size for desktop */
+    max-width: 40%;              /* Responsive for mobile */
+    height: auto;                /* Maintain aspect ratio */
+    border-radius: 15px;         /* Optional: Soft corners */
+    box-shadow: 0 4px 15px rgba(0,0,0,0.5); /* Optional: Nice shadow depth */
+  }
+</style>
+
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-auth-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/9.22.1/firebase-database-compat.js"></script>
 </head>
 <body>
+
+<img id="gameLogo" src="assets/logo/logo.png" alt="ProCheeser Logo">
 
 <div class="user-header">
     <div id="userInfo" style="display:none;">
@@ -42,17 +56,16 @@
 
   <div class="controls-panel">
     <div class="status-box">
-  <h3>Game Status</h3>
-  <p id="statusText">Select settings and Start.</p>
-  <div id="aiStatus" style="font-weight:bold; color:orange; margin-top:5px;"></div>
-</div>
+      <h3>Game Status</h3>
+      <p id="statusText">Select settings and Start.</p>
+      <div id="aiStatus" style="font-weight:bold; color:orange; margin-top:5px;"></div>
+    </div>
 
-<div id="roomDisplay" class="status-box" style="display:none; margin-top:10px; background:#2c3e50; border-left:5px solid #3498db;">
-  <h3 style="color:#aab7b8">Room Code</h3>
-  <p id="roomCodeText" style="font-family:monospace; font-size:1.4rem; letter-spacing:2px; color:white; user-select:all; cursor:pointer;" title="Click to Copy">---</p>
-  <small style="color:#bdc3c7">Share this with your friend</small>
-</div>
-
+    <div id="roomDisplay" class="status-box" style="display:none; margin-top:10px; background:#2c3e50; border-left:5px solid #3498db;">
+      <h3 style="color:#aab7b8">Room Code</h3>
+      <p id="roomCodeText" style="font-family:monospace; font-size:1.4rem; letter-spacing:2px; color:white; user-select:all; cursor:pointer;" title="Click to Copy">---</p>
+      <small style="color:#bdc3c7">Share this with your friend</small>
+    </div>
 
     <div id="gameSettings">
       
