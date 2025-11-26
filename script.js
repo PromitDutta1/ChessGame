@@ -579,29 +579,36 @@ function onDragStart(source, piece) {
   }
 }
 
-function onDrop(source,target){
-  var move=game.move({from:source,to:target,promotion:'q'});
-  if(move===null) return 'snapback';
+function onDrop(source, target){
+  // 1. Try Move
+  var move = game.move({from:source, to:target, promotion:'q'});
+  if(move === null) return 'snapback';
   
+  // 2. UPDATE VISUALS FIRST (So you see the move before Game Over)
+  board.position(game.fen());
   if(move.captured) playCaptureSound(); else playMoveSound();
   if(game.in_check()) playCheckSound();
   
-  redoStack=[];
-  if(!timerStarted) startTimer();
-  updateStatus();
-  updateTimerDisplay();
-  board.position(game.fen());
-
+  // 3. SEND TO SERVER (Before ending game locally)
   if(gameMode.includes('online') && currentRoomId){ 
       pushMoveToRoom(currentRoomId, game.fen(), move.san); 
   }
 
-  if(gameMode==='ai' && !game.game_over()){ 
-      isAiThinking=true; 
+  // 4. UPDATE STATUS (Now safe to check for Checkmate)
+  redoStack = [];
+  if(!timerStarted) startTimer();
+  
+  updateStatus(); 
+  updateTimerDisplay();
+
+  // 5. AI RESPONSE
+  if(gameMode === 'ai' && !game.game_over()){ 
+      isAiThinking = true; 
       $status.text("AI is thinking..."); 
-      setTimeout(makeAiMove,120); 
+      setTimeout(makeAiMove, 120); 
   }
 }
+
 function onSnapEnd(){ board.position(game.fen()); }
 /* =========================================================================
    PART 3: UI ACTIONS, ANALYSIS, AND GAME OVER OVERLAY
