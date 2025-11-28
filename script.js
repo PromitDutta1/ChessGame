@@ -303,26 +303,73 @@ function handleSquareClick(square) {
 
 // 6. ONLINE MATCHMAKING (Improved)
 async function initOnlineRandom() {
-    if (!currentUser) { alert("Login required."); return; }
+    if (!currentUser) { alert("Login required for Ranked Matches."); return; }
     
-    $('#findMatchBtn').text("Searching...").prop('disabled', true); // Disable button to prevent double-click
+    // UI Feedback
+    const $btn = $('#findMatchBtn');
+    $btn.text("Searching...").prop('disabled', true);
 
-    // 1. Check if *I* am already waiting in a room (Prevent duplicate rooms)
-    const myRooms = await db.ref('rooms').orderByChild('hostUid').equalTo(currentUser.uid).get();
-    if (myRooms.exists()) {
-        // If I have a room that is 'waiting_random', just rejoin it
-        let existingId = null;
-        myRooms.forEach(child => {
-            if (child.val().status === 'waiting_random') existingId = child.key;
-        });
-        
-        if (existingId) {
-            alert("You are already searching! Rejoining your room...");
-            initGame('online_random', existingId, 'white');
-            $status.text("Waiting for opponent...");
+    try {
+        // 1. Search for ANY waiting room
+        const snapshot = await db.ref('rooms').orderByChild('status').equalTo('waiting_random').limitToFirst(1).get();
+
+        if (snapshot.exists()) {
+            const rid = Object.keys(snapshot.val())[0];
+            const room = snapshot.val()[rid];
+
+            // CASE A: Found my OWN ghost room (rejoin it)
+            if (room.hostUid === currentUser.uid) {
+                initGame('online_random', rid, 'white');
+                $status.text("Waiting for opponent... (Rejoined)");
+                
+                // Re-enable button after delay
+                setTimeout(() => $btn.text("Find Match").prop('disabled', false), 2000);
+                return;
+            }
+
+            // CASE B: Found an OPPONENT (Join them)
+            await db.ref('rooms/' + rid).update({
+                status: 'playing',
+                blackPlayer: currentUser.uid,
+                blackName: currentUser.displayName
+            });
+            
+            initGame('online_random', rid, 'black');
+            
+            // Re-enable button
+            setTimeout(() => $btn.text("Find Match").prop('disabled', false), 2000);
             return;
         }
+
+        // CASE C: No rooms found -> Create New Room
+        const newRid = db.ref('rooms').push().key;
+        const newRoomRef = db.ref('rooms/' + newRid);
+
+        // IMPORTANT: Auto-delete room if I disconnect while waiting
+        newRoomRef.onDisconnect().remove(); 
+
+        await newRoomRef.set({
+            status: 'waiting_random',
+            hostUid: currentUser.uid,
+            whitePlayer: currentUser.uid,
+            whiteName: currentUser.displayName,
+            fen: 'start',
+            created: firebase.database.ServerValue.TIMESTAMP
+        });
+
+        initGame('online_random', newRid, 'white');
+        $status.text("Searching for opponent...");
+        
+        // Re-enable button
+        setTimeout(() => $btn.text("Find Match").prop('disabled', false), 2000);
+
+    } catch (error) {
+        console.error("Matchmaking Error:", error);
+        alert("Error finding match. Check console.");
+        $btn.text("Find Match").prop('disabled', false);
     }
+}
+
 
     // 2. Search for an existing opponent
     const snapshot = await db.ref('rooms').orderByChild('status').equalTo('waiting_random').limitToFirst(1).get();
