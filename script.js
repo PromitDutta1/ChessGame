@@ -370,43 +370,6 @@ async function initOnlineRandom() {
     }
 }
 
-
-    // 2. Search for an existing opponent
-    const snapshot = await db.ref('rooms').orderByChild('status').equalTo('waiting_random').limitToFirst(1).get();
-
-    if (snapshot.exists()) {
-        const rid = Object.keys(snapshot.val())[0];
-        const room = snapshot.val()[rid];
-
-        // Ensure I am not playing against myself
-        if (room.hostUid !== currentUser.uid) {
-             await db.ref('rooms/' + rid).update({
-                status: 'playing',
-                blackPlayer: currentUser.uid,
-                blackName: currentUser.displayName
-            });
-            initGame('online_random', rid, 'black');
-            return;
-        }
-    }
-
-    // 3. Create new room if no match found
-    const newRid = db.ref('rooms').push().key;
-    await db.ref('rooms/' + newRid).set({
-        status: 'waiting_random',
-        hostUid: currentUser.uid,
-        whitePlayer: currentUser.uid,
-        whiteName: currentUser.displayName,
-        fen: 'start',
-        created: firebase.database.ServerValue.TIMESTAMP
-    });
-    
-    initGame('online_random', newRid, 'white');
-    $status.text("Searching for opponent...");
-}
-
-
-
 // FIX: Create/Join Logic + Show Room ID on Side
 async function initOnlineFriend() {
     let roomId = $('#roomIdInput').val().trim();
